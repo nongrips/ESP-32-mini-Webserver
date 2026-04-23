@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
+#include <ArduinoJson.h>
 
 const char* ssid     = "DEIN_WLAN";      // CHANGE ME
 const char* password = "DEIN_PASSWORT";  // CHANGE ME
@@ -43,6 +44,32 @@ void handleToggle() {
   server.send(303);
 }
 
+void handleApiStatus() {
+  JsonDocument doc;
+  doc["led"]      = ledState;
+  doc["uptime"]   = millis() / 1000;
+  doc["ip"]       = WiFi.localIP().toString();
+  doc["hostname"] = "esp32.local";
+  doc["rssi"]     = WiFi.RSSI();
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleApiToggle() {
+  ledState = !ledState;
+  digitalWrite(ledPin, ledState ? HIGH : LOW);
+
+  JsonDocument doc;
+  doc["led"]    = ledState;
+  doc["uptime"] = millis() / 1000;
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
 void handleNotFound() {
   server.send(404, "text/plain", "404: Seite nicht gefunden.");
 }
@@ -72,8 +99,10 @@ void setup() {
   Serial.print("IP-Adresse: ");
   Serial.println(WiFi.localIP());
 
-  server.on("/",       handleRoot);
-  server.on("/toggle", handleToggle);
+  server.on("/",            handleRoot);
+  server.on("/toggle",      handleToggle);
+  server.on("/api/status",  handleApiStatus);
+  server.on("/api/toggle",  handleApiToggle);
   server.onNotFound(handleNotFound);
 
   if (MDNS.begin("esp32")) {

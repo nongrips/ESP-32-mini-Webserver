@@ -16,6 +16,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
   - [Board-Treiber installieren](#board-treiber-installieren)
   - [Code anpassen & hochladen](#code-anpassen--hochladen)
   - [Webserver aufrufen](#webserver-aufrufen)
+  - [JSON API](#json-api)
   - [Mögliche Einsatzzwecke](#mögliche-einsatzzwecke)
   - [Häufige Fehler & Lösungen](#häufige-fehler--lösungen)
 - [English](#english)
@@ -25,6 +26,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
   - [Install board support](#install-board-support)
   - [Configure & upload the code](#configure--upload-the-code)
   - [Access the webserver](#access-the-webserver)
+  - [JSON API](#json-api-1)
   - [Possible use cases](#possible-use-cases)
   - [Common errors & fixes](#common-errors--fixes)
 
@@ -270,6 +272,73 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 > - Linux & Android: funktioniert sofort (Avahi-Daemon ist meist vorinstalliert)  
 > - Windows: benötigt [Bonjour](https://support.apple.com/kb/DL999) (oder iTunes installieren)  
 > - **CachyOS:** `sudo pacman -S avahi nss-mdns` – danach einmalig in `/etc/nsswitch.conf` bei `hosts:` den Eintrag `mdns_minimal` vor `resolve` setzen
+
+---
+
+## JSON API
+
+Der Webserver stellt zwei JSON-Endpunkte bereit – nützlich für Home Assistant, Node-RED, Shell-Skripte oder andere Microcontroller.
+
+> **Library:** `ArduinoJson` by Benoit Blanchon – einmalig in der Arduino IDE installieren:  
+> **Werkzeuge → Bibliotheken verwalten → „ArduinoJson" suchen → Installieren**
+
+### `GET /api/status`
+
+Gibt den aktuellen Zustand des Boards zurück.
+
+```bash
+curl http://esp32.local/api/status
+```
+
+Antwort:
+```json
+{
+  "led": false,
+  "uptime": 142,
+  "ip": "192.168.1.42",
+  "hostname": "esp32.local",
+  "rssi": -58
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `led` | `true` = AN, `false` = AUS |
+| `uptime` | Sekunden seit letztem Neustart |
+| `ip` | IP-Adresse im lokalen Netz |
+| `hostname` | mDNS-Hostname |
+| `rssi` | WLAN-Signalstärke in dBm (näher an 0 = besser) |
+
+### `GET /api/toggle`
+
+Schaltet die LED um und gibt den neuen Zustand zurück. Ideal für curl-Skripte oder Automationen.
+
+```bash
+curl http://esp32.local/api/toggle
+```
+
+Antwort:
+```json
+{
+  "led": true,
+  "uptime": 145
+}
+```
+
+### Home Assistant – REST-Integration
+
+```yaml
+# configuration.yaml
+switch:
+  - platform: rest
+    name: ESP32 LED
+    resource: http://esp32.local/api/toggle
+    state_resource: http://esp32.local/api/status
+    body_on: ""
+    body_off: ""
+    is_on_template: "{{ value_json.led }}"
+    method: GET
+```
 
 ---
 
@@ -554,6 +623,73 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
 > - Linux & Android: works out of the box (Avahi daemon is usually pre-installed)  
 > - Windows: requires [Bonjour](https://support.apple.com/kb/DL999) (or install iTunes)  
 > - **CachyOS:** `sudo pacman -S avahi nss-mdns` – then add `mdns_minimal` before `resolve` in the `hosts:` line of `/etc/nsswitch.conf`
+
+---
+
+## JSON API
+
+The webserver exposes two JSON endpoints — useful for Home Assistant, Node-RED, shell scripts, or other microcontrollers.
+
+> **Library:** `ArduinoJson` by Benoit Blanchon – install once in Arduino IDE:  
+> **Tools → Manage Libraries → search "ArduinoJson" → Install**
+
+### `GET /api/status`
+
+Returns the current state of the board.
+
+```bash
+curl http://esp32.local/api/status
+```
+
+Response:
+```json
+{
+  "led": false,
+  "uptime": 142,
+  "ip": "192.168.1.42",
+  "hostname": "esp32.local",
+  "rssi": -58
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `led` | `true` = ON, `false` = OFF |
+| `uptime` | Seconds since last reboot |
+| `ip` | Local network IP address |
+| `hostname` | mDNS hostname |
+| `rssi` | WiFi signal strength in dBm (closer to 0 = better) |
+
+### `GET /api/toggle`
+
+Toggles the LED and returns the new state. Ideal for curl scripts or automations.
+
+```bash
+curl http://esp32.local/api/toggle
+```
+
+Response:
+```json
+{
+  "led": true,
+  "uptime": 145
+}
+```
+
+### Home Assistant – REST integration
+
+```yaml
+# configuration.yaml
+switch:
+  - platform: rest
+    name: ESP32 LED
+    resource: http://esp32.local/api/toggle
+    state_resource: http://esp32.local/api/status
+    body_on: ""
+    body_off: ""
+    is_on_template: "{{ value_json.led }}"
+    method: GET
+```
 
 ---
 
