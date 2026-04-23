@@ -253,6 +253,7 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
    Verbinde mit WLAN..........
    Verbunden!
    IP-Adresse: 192.168.1.42
+   mDNS gestartet: http://esp32.local
    Webserver gestartet.
    ```
 
@@ -261,8 +262,14 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 ## Webserver aufrufen
 
 1. Öffne einen Browser auf einem Gerät im **selben WLAN**
-2. Gib die IP-Adresse ein, z. B.: `http://192.168.1.42`
+2. Gib die IP-Adresse ein, z. B.: `http://192.168.1.42`  
+   **Oder:** Nutze den mDNS-Hostname: `http://esp32.local` *(kein IP-Nachschlagen nötig)*
 3. Die Weboberfläche erscheint mit einem Button zum Umschalten der LED (Pin 2 / blaue Onboard-LED)
+
+> **mDNS-Hinweise:**  
+> - Linux & Android: funktioniert sofort (Avahi-Daemon ist meist vorinstalliert)  
+> - Windows: benötigt [Bonjour](https://support.apple.com/kb/DL999) (oder iTunes installieren)  
+> - **CachyOS:** `sudo pacman -S avahi nss-mdns` – danach einmalig in `/etc/nsswitch.conf` bei `hosts:` den Eintrag `mdns_minimal` vor `resolve` setzen
 
 ---
 
@@ -530,6 +537,7 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
    Verbinde mit WLAN..........
    Verbunden!
    IP-Adresse: 192.168.1.42
+   mDNS gestartet: http://esp32.local
    Webserver gestartet.
    ```
 
@@ -538,8 +546,14 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
 ## Access the webserver
 
 1. Open a browser on a device connected to the **same WiFi network**
-2. Enter the IP address, e.g.: `http://192.168.1.42`
+2. Enter the IP address, e.g.: `http://192.168.1.42`  
+   **Or:** Use the mDNS hostname: `http://esp32.local` *(no IP lookup needed)*
 3. The web interface loads with a toggle button to control the LED (Pin 2 / onboard blue LED)
+
+> **mDNS notes:**  
+> - Linux & Android: works out of the box (Avahi daemon is usually pre-installed)  
+> - Windows: requires [Bonjour](https://support.apple.com/kb/DL999) (or install iTunes)  
+> - **CachyOS:** `sudo pacman -S avahi nss-mdns` – then add `mdns_minimal` before `resolve` in the `hosts:` line of `/etc/nsswitch.conf`
 
 ---
 

@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 
 const char* ssid     = "DEIN_WLAN";      // CHANGE ME
 const char* password = "DEIN_PASSWORT";  // CHANGE ME
@@ -74,6 +75,13 @@ void setup() {
   server.on("/",       handleRoot);
   server.on("/toggle", handleToggle);
   server.onNotFound(handleNotFound);
+
+  if (MDNS.begin("esp32")) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS gestartet: http://esp32.local");
+  } else {
+    Serial.println("mDNS fehlgeschlagen.");
+  }
 
   server.begin();
   Serial.println("Webserver gestartet.");
