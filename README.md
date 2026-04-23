@@ -12,6 +12,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
 - [Deutsch](#deutsch)
   - [Was du brauchst](#was-du-brauchst)
   - [Arduino IDE einrichten](#arduino-ide-einrichten)
+  - [CachyOS / Arch Linux – Besonderheiten](#cachyos--arch-linux--besonderheiten)
   - [Board-Treiber installieren](#board-treiber-installieren)
   - [Code anpassen & hochladen](#code-anpassen--hochladen)
   - [Webserver aufrufen](#webserver-aufrufen)
@@ -20,6 +21,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
 - [English](#english)
   - [What you need](#what-you-need)
   - [Set up Arduino IDE](#set-up-arduino-ide)
+  - [CachyOS / Arch Linux – Special notes](#cachyos--arch-linux--special-notes)
   - [Install board support](#install-board-support)
   - [Configure & upload the code](#configure--upload-the-code)
   - [Access the webserver](#access-the-webserver)
@@ -74,6 +76,126 @@ Das Board HW-394 nutzt oft einen **CH340**- oder **CP2102**-USB-Chip. Prüfe, ob
 Falls kein Port erscheint:
 - **CH340-Treiber:** https://www.wch-ic.com/downloads/CH341SER_EXE.html
 - **CP210x-Treiber:** https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+
+---
+
+## CachyOS / Arch Linux – Besonderheiten
+
+> CachyOS basiert auf Arch Linux. Es gibt einige wichtige Unterschiede zu Windows und Debian/Ubuntu-basierten Systemen.
+
+### 1. Arduino IDE installieren
+
+Auf CachyOS **nicht** manuell herunterladen – stattdessen über AUR installieren:
+
+```bash
+# Mit yay
+yay -S arduino-ide-bin
+
+# Oder mit paru
+paru -S arduino-ide-bin
+```
+
+Alternativ als **Flatpak** (aber Achtung – siehe Abschnitt unten):
+
+```bash
+flatpak install flathub cc.arduino.IDE2
+```
+
+Oder als **AppImage** von der Arduino-Website – dann zuerst ausführbar machen:
+
+```bash
+chmod +x arduino-ide_*.AppImage
+./arduino-ide_*.AppImage
+```
+
+> Falls das AppImage nicht startet: `sudo pacman -S fuse2`
+
+---
+
+### 2. USB-Treiber – kein manueller Download nötig
+
+Der CH340- und CP210x-Kernel-Modul ist im CachyOS-Kernel bereits enthalten. Nach dem Einstecken des Boards wird es automatisch erkannt.
+
+Prüfen, ob das Modul geladen ist:
+
+```bash
+# Für CH340-Chip (häufigster bei günstigen ESP32-Boards)
+lsmod | grep ch341
+
+# Für CP2102-Chip
+lsmod | grep cp210x
+```
+
+Falls kein Modul geladen ist, manuell laden:
+
+```bash
+sudo modprobe ch341
+# oder
+sudo modprobe cp210x
+```
+
+Nach dem Einstecken des Boards den Port prüfen:
+
+```bash
+ls /dev/ttyUSB* /dev/ttyACM*
+# oder
+dmesg | tail -15
+```
+
+Das ESP32 erscheint typischerweise als:
+- `/dev/ttyUSB0` – CH340-Chip
+- `/dev/ttyACM0` – CP2102-Chip
+
+---
+
+### 3. Seriellen Port freischalten – `uucp`-Gruppe (wichtig!)
+
+Das ist der **häufigste Fehler auf Arch/CachyOS**: Ohne Gruppenzugehörigkeit kann die Arduino IDE nicht auf den Port zugreifen.
+
+Auf **Arch/CachyOS** heißt die Gruppe `uucp` (nicht `dialout` wie bei Ubuntu/Debian).
+
+```bash
+# Benutzer zur uucp-Gruppe hinzufügen
+sudo usermod -aG uucp $USER
+```
+
+Danach **ausloggen und neu einloggen** (oder neu starten). Prüfen ob es geklappt hat:
+
+```bash
+groups
+# Ausgabe muss "uucp" enthalten
+```
+
+Direkter Test ohne Neuanmeldung (nur für die aktuelle Session):
+
+```bash
+newgrp uucp
+```
+
+> Ohne diesen Schritt erscheint in der Arduino IDE: **„Error opening serial port"** oder der Upload schlägt mit einem Berechtigungsfehler fehl.
+
+---
+
+### 4. Flatpak-Einschränkung (Sandbox-Problem)
+
+Wenn die Arduino IDE über **Flatpak** installiert wurde, kann sie standardmäßig **nicht auf `/dev/ttyUSB0` zugreifen**, da Flatpak in einer Sandbox läuft.
+
+Freigabe erteilen:
+
+```bash
+flatpak override --user --filesystem=/dev/ttyUSB0 cc.arduino.IDE2
+flatpak override --user --filesystem=/dev/ttyACM0 cc.arduino.IDE2
+```
+
+Dauerhaftere Alternative: Die **AUR-Version** (`arduino-ide-bin`) läuft ohne Sandbox und hat dieses Problem nicht.
+
+---
+
+### 5. python-pyserial (falls esptool Fehler auftreten)
+
+```bash
+sudo pacman -S python-pyserial
+```
 
 ---
 
@@ -176,6 +298,10 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 | Seite lädt nicht | Prüfe, ob PC und ESP32 im selben Netz sind; Firewall prüfen |
 | `esptool.py` Fehler | Upload Speed auf `115200` reduzieren |
 | Board wird heiß | Kurzschluss prüfen, Stromversorgung kontrollieren |
+| **[CachyOS]** „Error opening serial port" | `sudo usermod -aG uucp $USER` → ausloggen → neu einloggen |
+| **[CachyOS]** Flatpak sieht keinen Port | `flatpak override --user --filesystem=/dev/ttyUSB0 cc.arduino.IDE2` |
+| **[CachyOS]** AppImage startet nicht | `sudo pacman -S fuse2` |
+| **[CachyOS]** `ch341`-Modul fehlt | `sudo modprobe ch341` oder `sudo modprobe cp210x` |
 
 ---
 
@@ -227,6 +353,126 @@ The HW-394 board typically uses a **CH340** or **CP2102** USB chip. Check if you
 If no port appears:
 - **CH340 driver:** https://www.wch-ic.com/downloads/CH341SER_EXE.html
 - **CP210x driver:** https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+
+---
+
+## CachyOS / Arch Linux – Special notes
+
+> CachyOS is Arch-based. There are a few important differences from Windows and Debian/Ubuntu systems.
+
+### 1. Install Arduino IDE
+
+On CachyOS, **don't download manually** – install via AUR instead:
+
+```bash
+# Using yay
+yay -S arduino-ide-bin
+
+# Or using paru
+paru -S arduino-ide-bin
+```
+
+Alternatively as a **Flatpak** (but read the caveat below):
+
+```bash
+flatpak install flathub cc.arduino.IDE2
+```
+
+Or use the **AppImage** from the Arduino website – make it executable first:
+
+```bash
+chmod +x arduino-ide_*.AppImage
+./arduino-ide_*.AppImage
+```
+
+> If the AppImage doesn't launch: `sudo pacman -S fuse2`
+
+---
+
+### 2. USB drivers – no manual installation needed
+
+The CH340 (`ch341`) and CP210x kernel modules are already included in the CachyOS kernel. The board is detected automatically when plugged in.
+
+Check if the module is loaded:
+
+```bash
+# For CH340 chip (most common on budget ESP32 boards)
+lsmod | grep ch341
+
+# For CP2102 chip
+lsmod | grep cp210x
+```
+
+Load manually if needed:
+
+```bash
+sudo modprobe ch341
+# or
+sudo modprobe cp210x
+```
+
+After plugging in the board, check the port:
+
+```bash
+ls /dev/ttyUSB* /dev/ttyACM*
+# or
+dmesg | tail -15
+```
+
+The ESP32 typically appears as:
+- `/dev/ttyUSB0` – CH340 chip
+- `/dev/ttyACM0` – CP2102 chip
+
+---
+
+### 3. Unlock serial port access – `uucp` group (critical!)
+
+This is the **most common mistake on Arch/CachyOS**: without group membership, Arduino IDE cannot access the serial port.
+
+On **Arch/CachyOS** the group is called `uucp` (not `dialout` as on Ubuntu/Debian).
+
+```bash
+# Add your user to the uucp group
+sudo usermod -aG uucp $USER
+```
+
+Then **log out and log back in** (or reboot). Verify it worked:
+
+```bash
+groups
+# Output must contain "uucp"
+```
+
+Quick test without re-login (current session only):
+
+```bash
+newgrp uucp
+```
+
+> Without this step, Arduino IDE will show **"Error opening serial port"** or uploads will fail with a permissions error.
+
+---
+
+### 4. Flatpak sandbox limitation
+
+If Arduino IDE was installed via **Flatpak**, it cannot access `/dev/ttyUSB0` by default because Flatpak runs in a sandbox.
+
+Grant access:
+
+```bash
+flatpak override --user --filesystem=/dev/ttyUSB0 cc.arduino.IDE2
+flatpak override --user --filesystem=/dev/ttyACM0 cc.arduino.IDE2
+```
+
+Better alternative: the **AUR version** (`arduino-ide-bin`) runs without a sandbox and doesn't have this problem.
+
+---
+
+### 5. python-pyserial (if esptool errors occur)
+
+```bash
+sudo pacman -S python-pyserial
+```
 
 ---
 
@@ -329,6 +575,10 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
 | Page doesn't load | Confirm PC and ESP32 are on the same network; check firewall |
 | `esptool.py` error | Reduce Upload Speed to `115200` |
 | Board gets hot | Check for short circuits; verify power supply |
+| **[CachyOS]** "Error opening serial port" | `sudo usermod -aG uucp $USER` → log out → log back in |
+| **[CachyOS]** Flatpak can't see the port | `flatpak override --user --filesystem=/dev/ttyUSB0 cc.arduino.IDE2` |
+| **[CachyOS]** AppImage won't launch | `sudo pacman -S fuse2` |
+| **[CachyOS]** `ch341` module missing | `sudo modprobe ch341` or `sudo modprobe cp210x` |
 
 ---
 
