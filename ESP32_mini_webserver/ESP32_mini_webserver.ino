@@ -2,14 +2,17 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
+#include <WiFiManager.h>   // T2-D – Library Manager: "WiFiManager" by tzapu
+#include <Preferences.h>   // T3-B – im ESP32-Core enthalten
+#include <ArduinoOTA.h>    // T3-C – im ESP32-Core enthalten
 
-const char* ssid     = "DEIN_WLAN";      // CHANGE ME
-const char* password = "DEIN_PASSWORT";  // CHANGE ME
+// OTA-Passwort hier setzen (nie leer lassen!)
+#define OTA_PASSWORD "esp32ota"
 
-WebServer server(80);
+WebServer   server(80);
+Preferences prefs;
 
 // --- Pin-Konfiguration -------------------------------------------
-// Pins und Namen hier anpassen. Beliebig viele Einträge möglich.
 const int   PINS[]      = {2, 4, 5};
 const char* PIN_NAMES[] = {"LED (Onboard)", "Ausgang 2", "Ausgang 3"};
 const int   PIN_COUNT   = sizeof(PINS) / sizeof(PINS[0]);
@@ -20,6 +23,10 @@ int pinIndex(int gpio) {
   for (int i = 0; i < PIN_COUNT; i++)
     if (PINS[i] == gpio) return i;
   return -1;
+}
+
+void saveState(int idx) {
+  prefs.putBool(("gpio" + String(PINS[idx])).c_str(), pinStates[idx]);
 }
 
 void handleRoot() {
@@ -34,7 +41,8 @@ void handleRoot() {
   html += "background:#2d2d2d;padding:12px 20px;border-radius:8px;margin:10px auto;max-width:420px;}";
   html += "button{padding:10px 22px;font-size:1rem;border:none;border-radius:6px;cursor:pointer;color:#fff;}";
   html += ".on{background:#4CAF50;} .off{background:#f44336;}";
-  html += "a{color:#00bcd4;font-size:.85rem;display:block;margin-top:30px;}";
+  html += ".links{margin-top:30px;font-size:.85rem;}";
+  html += ".links a{color:#00bcd4;margin:0 10px;}";
   html += "</style></head><body>";
   html += "<h1>ESP32 Mini Webserver</h1>";
 
@@ -49,7 +57,7 @@ void handleRoot() {
     html += "</form></div>";
   }
 
-  html += "<a href='/debug'>Debug-Info</a>";
+  html += "<div class='links'><a href='/debug'>Debug</a><a href='/reset-wifi'>WLAN zurücksetzen</a></div>";
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -61,13 +69,14 @@ void handleToggle() {
   if (idx >= 0) {
     pinStates[idx] = !pinStates[idx];
     digitalWrite(PINS[idx], pinStates[idx] ? HIGH : LOW);
+    saveState(idx);
   }
   server.sendHeader("Location", "/");
   server.send(303);
 }
 
 void buildStatusJson(JsonDocument& doc) {
-  doc["led"]      = pinStates[0]; // backward compat
+  doc["led"]      = pinStates[0];
   doc["uptime"]   = millis() / 1000;
   doc["ip"]       = WiFi.localIP().toString();
   doc["hostname"] = "esp32.local";
@@ -97,29 +106,29 @@ void handleApiToggle() {
   if (idx >= 0) {
     pinStates[idx] = !pinStates[idx];
     digitalWrite(PINS[idx], pinStates[idx] ? HIGH : LOW);
+    saveState(idx);
   }
 
   JsonDocument doc;
   doc["gpio"]   = gpio;
   doc["state"]  = idx >= 0 ? pinStates[idx] : false;
-  doc["led"]    = pinStates[0]; // backward compat
+  doc["led"]    = pinStates[0];
   doc["uptime"] = millis() / 1000;
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
-// T1-D: Debug-Endpoint
 void handleDebug() {
   String txt = "=== ESP32 Debug ===\n";
-  txt += "Uptime:      " + String(millis() / 1000)          + " s\n";
-  txt += "Free Heap:   " + String(ESP.getFreeHeap())         + " bytes\n";
-  txt += "CPU Freq:    " + String(ESP.getCpuFreqMHz())       + " MHz\n";
-  txt += "Flash Size:  " + String(ESP.getFlashChipSize()/1024) + " KB\n";
-  txt += "IP:          " + WiFi.localIP().toString()          + "\n";
-  txt += "MAC:         " + WiFi.macAddress()                  + "\n";
-  txt += "SSID:        " + WiFi.SSID()                        + "\n";
-  txt += "RSSI:        " + String(WiFi.RSSI())                + " dBm\n";
+  txt += "Uptime:      " + String(millis() / 1000)             + " s\n";
+  txt += "Free Heap:   " + String(ESP.getFreeHeap())            + " bytes\n";
+  txt += "CPU Freq:    " + String(ESP.getCpuFreqMHz())          + " MHz\n";
+  txt += "Flash Size:  " + String(ESP.getFlashChipSize() / 1024) + " KB\n";
+  txt += "IP:          " + WiFi.localIP().toString()             + "\n";
+  txt += "MAC:         " + WiFi.macAddress()                     + "\n";
+  txt += "SSID:        " + WiFi.SSID()                           + "\n";
+  txt += "RSSI:        " + String(WiFi.RSSI())                   + " dBm\n";
   txt += "Hostname:    esp32.local\n";
   txt += "\nPins:\n";
   for (int i = 0; i < PIN_COUNT; i++)
@@ -127,56 +136,80 @@ void handleDebug() {
   server.send(200, "text/plain", txt);
 }
 
+// T2-D: WLAN-Einstellungen löschen und neu konfigurieren
+void handleResetWifi() {
+  server.send(200, "text/plain", "WLAN-Einstellungen werden zurückgesetzt. Board startet neu...");
+  delay(1000);
+  WiFiManager wm;
+  wm.resetSettings();
+  ESP.restart();
+}
+
 void handleNotFound() {
   server.send(404, "text/plain", "404: Seite nicht gefunden.");
+}
+
+void setupOTA() {
+  ArduinoOTA.setHostname("esp32-webserver");
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA: Update startet...");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA: Fertig. Neustart...");
+  });
+  ArduinoOTA.onError([](ota_error_t err) {
+    Serial.printf("OTA Fehler [%u]\n", err);
+  });
+
+  ArduinoOTA.begin();
+  Serial.println("OTA bereit (Passwort: " OTA_PASSWORD ")");
 }
 
 void setup() {
   Serial.begin(115200);
 
+  // Pins initialisieren; gespeicherten Zustand laden
+  prefs.begin("webserver", false);
   for (int i = 0; i < PIN_COUNT; i++) {
-    pinStates[i] = false;
+    pinStates[i] = prefs.getBool(("gpio" + String(PINS[i])).c_str(), false);
     pinMode(PINS[i], OUTPUT);
-    digitalWrite(PINS[i], LOW);
+    digitalWrite(PINS[i], pinStates[i] ? HIGH : LOW);
   }
 
-  WiFi.begin(ssid, password);
-  Serial.print("Verbinde mit WLAN");
-
-  int retries = 0;
-  while (WiFi.status() != WL_CONNECTED && retries < 30) {
-    delay(500);
-    Serial.print(".");
-    retries++;
+  // T2-D: WiFiManager – beim ersten Start öffnet sich ein Captive-Portal
+  // ("ESP32-Setup"), danach werden Credentials im Flash gespeichert.
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(120);
+  if (!wm.autoConnect("ESP32-Setup")) {
+    Serial.println("WiFiManager: Timeout, Neustart...");
+    ESP.restart();
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nVerbindung fehlgeschlagen! SSID/Passwort prüfen.");
-    return;
-  }
-
-  Serial.println("\nVerbunden!");
+  Serial.println("WLAN verbunden!");
   Serial.print("IP-Adresse: ");
   Serial.println(WiFi.localIP());
 
-  server.on("/",           handleRoot);
-  server.on("/toggle",     handleToggle);
-  server.on("/api/status", handleApiStatus);
-  server.on("/api/toggle", handleApiToggle);
-  server.on("/debug",      handleDebug);
-  server.onNotFound(handleNotFound);
-
   if (MDNS.begin("esp32")) {
     MDNS.addService("http", "tcp", 80);
-    Serial.println("mDNS gestartet: http://esp32.local");
-  } else {
-    Serial.println("mDNS fehlgeschlagen.");
+    Serial.println("mDNS: http://esp32.local");
   }
 
+  server.on("/",            handleRoot);
+  server.on("/toggle",      handleToggle);
+  server.on("/api/status",  handleApiStatus);
+  server.on("/api/toggle",  handleApiToggle);
+  server.on("/debug",       handleDebug);
+  server.on("/reset-wifi",  handleResetWifi);
+  server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("Webserver gestartet.");
+
+  setupOTA();
 }
 
 void loop() {
   server.handleClient();
+  ArduinoOTA.handle();
 }
