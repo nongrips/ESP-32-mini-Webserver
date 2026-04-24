@@ -3,7 +3,10 @@
 Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und ausschalten lässt.  
 *A simple ESP32 webserver that lets you toggle an LED via your browser.*
 
-> **Board:** ESP-32D (HW-394) · WiFi + Bluetooth · USB-C
+> **Board:** ESP-32D (HW-394) · WiFi + Bluetooth · USB-C  
+> **Aktiver Branch / Active branch:** `claude/esp32-webserver-readme-WjgB3`  
+> Alle Erweiterungen (mDNS, JSON API, WiFiManager, OTA, BME280, LittleFS, WebSocket, AsyncWebServer, MQTT) befinden sich auf diesem Branch.  
+> *All extensions (mDNS, JSON API, WiFiManager, OTA, BME280, LittleFS, WebSocket, AsyncWebServer, MQTT) are on this branch.*
 
 ---
 
@@ -16,6 +19,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
   - [Board-Treiber installieren](#board-treiber-installieren)
   - [Code anpassen & hochladen](#code-anpassen--hochladen)
   - [Webserver aufrufen](#webserver-aufrufen)
+  - [JSON API](#json-api)
   - [Mögliche Einsatzzwecke](#mögliche-einsatzzwecke)
   - [Häufige Fehler & Lösungen](#häufige-fehler--lösungen)
 - [English](#english)
@@ -25,6 +29,7 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
   - [Install board support](#install-board-support)
   - [Configure & upload the code](#configure--upload-the-code)
   - [Access the webserver](#access-the-webserver)
+  - [JSON API](#json-api-1)
   - [Possible use cases](#possible-use-cases)
   - [Common errors & fixes](#common-errors--fixes)
 
@@ -253,6 +258,7 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
    Verbinde mit WLAN..........
    Verbunden!
    IP-Adresse: 192.168.1.42
+   mDNS gestartet: http://esp32.local
    Webserver gestartet.
    ```
 
@@ -261,8 +267,264 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 ## Webserver aufrufen
 
 1. Öffne einen Browser auf einem Gerät im **selben WLAN**
-2. Gib die IP-Adresse ein, z. B.: `http://192.168.1.42`
+2. Gib die IP-Adresse ein, z. B.: `http://192.168.1.42`  
+   **Oder:** Nutze den mDNS-Hostname: `http://esp32.local` *(kein IP-Nachschlagen nötig)*
 3. Die Weboberfläche erscheint mit einem Button zum Umschalten der LED (Pin 2 / blaue Onboard-LED)
+
+> **mDNS-Hinweise:**  
+> - Linux & Android: funktioniert sofort (Avahi-Daemon ist meist vorinstalliert)  
+> - Windows: benötigt [Bonjour](https://support.apple.com/kb/DL999) (oder iTunes installieren)  
+> - **CachyOS:** `sudo pacman -S avahi nss-mdns` – danach einmalig in `/etc/nsswitch.conf` bei `hosts:` den Eintrag `mdns_minimal` vor `resolve` setzen
+
+---
+
+## JSON API
+
+Der Webserver stellt zwei JSON-Endpunkte bereit – nützlich für Home Assistant, Node-RED, Shell-Skripte oder andere Microcontroller.
+
+> **Library:** `ArduinoJson` by Benoit Blanchon – einmalig in der Arduino IDE installieren:  
+> **Werkzeuge → Bibliotheken verwalten → „ArduinoJson" suchen → Installieren**
+
+### `GET /api/status`
+
+Gibt den aktuellen Zustand des Boards zurück.
+
+```bash
+curl http://esp32.local/api/status
+```
+
+Antwort:
+```json
+{
+  "led": false,
+  "uptime": 142,
+  "ip": "192.168.1.42",
+  "hostname": "esp32.local",
+  "rssi": -58
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `led` | `true` = AN, `false` = AUS |
+| `uptime` | Sekunden seit letztem Neustart |
+| `ip` | IP-Adresse im lokalen Netz |
+| `hostname` | mDNS-Hostname |
+| `rssi` | WLAN-Signalstärke in dBm (näher an 0 = besser) |
+
+### `GET /api/toggle`
+
+Schaltet die LED um und gibt den neuen Zustand zurück. Ideal für curl-Skripte oder Automationen.
+
+```bash
+curl http://esp32.local/api/toggle
+```
+
+Antwort:
+```json
+{
+  "led": true,
+  "uptime": 145
+}
+```
+
+### Home Assistant – REST-Integration
+
+```yaml
+# configuration.yaml
+switch:
+  - platform: rest
+    name: ESP32 LED
+    resource: http://esp32.local/api/toggle
+    state_resource: http://esp32.local/api/status
+    body_on: ""
+    body_off: ""
+    is_on_template: "{{ value_json.led }}"
+    method: GET
+```
+
+---
+
+## Erweiterungen
+
+### Multi-GPIO (T1-C)
+
+In der Sketchdatei die Pin-Konfiguration anpassen:
+
+```cpp
+const int   PINS[]      = {2, 4, 5};        // beliebig viele GPIOs
+const char* PIN_NAMES[] = {"LED", "Relais 1", "Relais 2"};
+```
+
+Jeder Pin bekommt eine eigene Zeile auf der Weboberfläche.  
+Steuerung per URL: `/toggle?pin=4` oder `/api/toggle?pin=4`
+
+---
+
+### Debug-Endpoint (T1-D)
+
+`GET http://esp32.local/debug` – gibt Klartext-Info aus:  
+Uptime, freier Heap, CPU, Flash, IP, MAC, SSID, RSSI, Pin-Zustände
+
+---
+
+### BME280 Temperatursensor (T2-A)
+
+**Libraries (Library Manager):** `Adafruit BME280 Library` + `Adafruit Unified Sensor`
+
+**Verkabelung (I2C):**
+
+| BME280-Pin | ESP32-Pin |
+|---|---|
+| VCC | 3,3 V |
+| GND | GND |
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+
+Sensor wird automatisch erkannt (versucht Adresse `0x76` und `0x77`).  
+Die Webseite zeigt Temperatur, Luftfeuchtigkeit und Luftdruck in einer Karte.  
+`GET /api/sensor` → JSON mit `temp_c`, `humidity`, `pressure`
+
+---
+
+### LittleFS – UI-Dateien im Flash (T2-B)
+
+HTML, CSS und JavaScript liegen in `ESP32_mini_webserver/data/` und werden auf den Flash des Boards hochgeladen.  
+Die Weboberfläche lässt sich so ohne Neukompilieren anpassen.
+
+**Dateien hochladen:**
+
+1. Plugin installieren: **ESP32 LittleFS Data Upload**  
+   → in Arduino IDE 2.x: Plugin-ZIP herunterladen und in `~/.arduino15/plugins/` entpacken  
+   → Quelle: https://github.com/earlephilhower/arduino-littlefs-upload
+2. **Werkzeuge → ESP32 LittleFS Data Upload** ausführen
+
+---
+
+### WebSocket – Echtzeit-Updates (T2-C)
+
+**Library (Library Manager):** `WebSockets` by Markus Sattler  
+*(nach T3-A-Refactor durch AsyncWebSocket ersetzt – kein separater Port mehr)*
+
+Alle offenen Browser-Tabs spiegeln den LED/Pin-Zustand sofort wider, ohne Polling.
+
+---
+
+### WiFi Manager – kein hardcodiertes Passwort (T2-D)
+
+**Library (Library Manager):** `WiFiManager` by tzapu
+
+Beim **ersten Start** (oder nach `/reset-wifi`) öffnet der ESP32 einen Access Point namens **„ESP32-Setup"**.  
+Verbinde dein Smartphone damit → das Captive-Portal öffnet sich automatisch → WLAN-Daten eingeben → Board speichert und verbindet sich.
+
+Bei jedem weiteren Start verbindet sich das Board automatisch mit dem gespeicherten WLAN.
+
+---
+
+### NVS-Persistenz – Zustand nach Neustart (T3-B)
+
+Die Library `Preferences` (im ESP32-Core enthalten) speichert den Ein/Aus-Zustand jedes Pins im Flash.  
+Nach einem Stromausfall oder Neustart ist der vorherige Zustand wiederhergestellt.
+
+---
+
+### OTA-Updates – Flashen ohne USB (T3-C)
+
+**Library:** `ArduinoOTA` (im ESP32-Core enthalten)
+
+Das Passwort in der Sketchdatei setzen:
+
+```cpp
+#define OTA_PASSWORD "esp32ota"  // bitte ändern!
+```
+
+In der Arduino IDE erscheint das Board unter **Werkzeuge → Port** als Netzwerk-Port (`esp32-webserver`).  
+Upload läuft wie gewohnt über den Upload-Button.
+
+---
+
+### AsyncWebServer-Refactor (T3-A)
+
+Diese beiden Libraries sind **nicht** im Library Manager – sie müssen manuell installiert werden.
+
+**Option A – Terminal (empfohlen für CachyOS):**
+
+```bash
+# Arduino-Bibliotheksordner anlegen falls noch nicht vorhanden
+mkdir -p ~/Arduino/libraries
+
+# ZIPs herunterladen und entpacken
+cd ~/Arduino/libraries
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+unzip -o AsyncTCP.zip
+unzip -o ESPAsyncWebServer.zip
+rm AsyncTCP.zip ESPAsyncWebServer.zip
+```
+
+Danach Arduino IDE **neu starten**.
+
+**Option B – Arduino IDE GUI:**
+
+1. ZIP-Dateien im Browser herunterladen:
+   - https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip
+   - https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip
+2. Arduino IDE → **Sketch → Bibliothek einbinden → .ZIP-Bibliothek hinzufügen**
+3. Zuerst `AsyncTCP.zip`, dann `ESPAsyncWebServer.zip` auswählen
+4. Arduino IDE **neu starten**
+
+> **Wichtig:** AsyncTCP muss **vor** ESPAsyncWebServer installiert werden, da es eine Abhängigkeit ist.
+
+**Vorteile gegenüber synchronem `WebServer`:**
+- Mehrere Requests werden parallel verarbeitet (mehrere Browser-Tabs, Home Assistant + Browser gleichzeitig)
+- `loop()` wird nicht mehr durch HTTP-Handling blockiert
+- WebSocket läuft als Pfad `/ws` auf Port 80 (kein separater Port 81 mehr)
+
+---
+
+### MQTT – Home Assistant / Node-RED (T3-D)
+
+**Library (Library Manager):** `PubSubClient` by Nick O'Leary
+
+**Broker auf CachyOS installieren:**
+```bash
+sudo pacman -S mosquitto
+sudo systemctl enable --now mosquitto
+```
+
+In der Sketchdatei aktivieren:
+```cpp
+#define MQTT_ENABLED  true
+#define MQTT_BROKER   "192.168.1.X"  // IP des Rechners mit Mosquitto
+```
+
+**Topic-Struktur** (Basis: `esp32/<MAC-Adresse>`):
+
+| Topic | Richtung | Payload |
+|---|---|---|
+| `.../pins/<gpio>/set` | → ESP32 | `ON`, `OFF`, `TOGGLE` |
+| `.../pins/<gpio>/state` | ESP32 → | `ON` / `OFF` (retained) |
+| `.../sensor/temp_c` | ESP32 → | z. B. `22.5` |
+| `.../sensor/humidity` | ESP32 → | z. B. `48.1` |
+| `.../sensor/pressure` | ESP32 → | z. B. `1013.2` |
+| `.../status` | ESP32 → | `online` / `offline` (LWT) |
+
+**Home Assistant – MQTT Switch:**
+```yaml
+# configuration.yaml
+mqtt:
+  switch:
+    - name: "ESP32 LED"
+      command_topic: "esp32/<MAC>/pins/2/set"
+      state_topic:   "esp32/<MAC>/pins/2/state"
+      payload_on:    "ON"
+      payload_off:   "OFF"
+
+  sensor:
+    - name: "ESP32 Temperatur"
+      state_topic:         "esp32/<MAC>/sensor/temp_c"
+      unit_of_measurement: "°C"
+```
 
 ---
 
@@ -273,7 +535,7 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 - Rolladen, Ventilatoren oder Heizkörper fernsteuern
 
 ### Sensormonitoring
-- Temperatur/Luftfeuchtigkeit (DHT22, BME280) live im Browser anzeigen
+- Temperatur/Luftfeuchtigkeit (BME280) live im Browser und in Home Assistant
 - Bodenfeuchtigkeit für Pflanzen überwachen
 
 ### Prototypen & Bastelprojekte
@@ -283,7 +545,7 @@ const char* password = "DEIN_PASSWORT";  // Passwort deines WLANs
 
 ### Lehr- & Lernprojekte
 - Einstieg in IoT und Webentwicklung
-- REST-API-Grundlagen verstehen
+- REST-API, WebSocket und MQTT in der Praxis
 - Netzwerkprogrammierung mit C++ üben
 
 ---
@@ -530,6 +792,7 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
    Verbinde mit WLAN..........
    Verbunden!
    IP-Adresse: 192.168.1.42
+   mDNS gestartet: http://esp32.local
    Webserver gestartet.
    ```
 
@@ -538,8 +801,264 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
 ## Access the webserver
 
 1. Open a browser on a device connected to the **same WiFi network**
-2. Enter the IP address, e.g.: `http://192.168.1.42`
+2. Enter the IP address, e.g.: `http://192.168.1.42`  
+   **Or:** Use the mDNS hostname: `http://esp32.local` *(no IP lookup needed)*
 3. The web interface loads with a toggle button to control the LED (Pin 2 / onboard blue LED)
+
+> **mDNS notes:**  
+> - Linux & Android: works out of the box (Avahi daemon is usually pre-installed)  
+> - Windows: requires [Bonjour](https://support.apple.com/kb/DL999) (or install iTunes)  
+> - **CachyOS:** `sudo pacman -S avahi nss-mdns` – then add `mdns_minimal` before `resolve` in the `hosts:` line of `/etc/nsswitch.conf`
+
+---
+
+## JSON API
+
+The webserver exposes two JSON endpoints — useful for Home Assistant, Node-RED, shell scripts, or other microcontrollers.
+
+> **Library:** `ArduinoJson` by Benoit Blanchon – install once in Arduino IDE:  
+> **Tools → Manage Libraries → search "ArduinoJson" → Install**
+
+### `GET /api/status`
+
+Returns the current state of the board.
+
+```bash
+curl http://esp32.local/api/status
+```
+
+Response:
+```json
+{
+  "led": false,
+  "uptime": 142,
+  "ip": "192.168.1.42",
+  "hostname": "esp32.local",
+  "rssi": -58
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `led` | `true` = ON, `false` = OFF |
+| `uptime` | Seconds since last reboot |
+| `ip` | Local network IP address |
+| `hostname` | mDNS hostname |
+| `rssi` | WiFi signal strength in dBm (closer to 0 = better) |
+
+### `GET /api/toggle`
+
+Toggles the LED and returns the new state. Ideal for curl scripts or automations.
+
+```bash
+curl http://esp32.local/api/toggle
+```
+
+Response:
+```json
+{
+  "led": true,
+  "uptime": 145
+}
+```
+
+### Home Assistant – REST integration
+
+```yaml
+# configuration.yaml
+switch:
+  - platform: rest
+    name: ESP32 LED
+    resource: http://esp32.local/api/toggle
+    state_resource: http://esp32.local/api/status
+    body_on: ""
+    body_off: ""
+    is_on_template: "{{ value_json.led }}"
+    method: GET
+```
+
+---
+
+## Extensions
+
+### Multi-GPIO (T1-C)
+
+Edit the pin config in the sketch:
+
+```cpp
+const int   PINS[]      = {2, 4, 5};
+const char* PIN_NAMES[] = {"LED", "Relay 1", "Relay 2"};
+```
+
+Each pin gets its own row in the web UI.  
+Control via URL: `/toggle?pin=4` or `/api/toggle?pin=4`
+
+---
+
+### Debug endpoint (T1-D)
+
+`GET http://esp32.local/debug` – returns plain-text board info:  
+uptime, free heap, CPU, flash size, IP, MAC, SSID, RSSI, pin states
+
+---
+
+### BME280 temperature sensor (T2-A)
+
+**Libraries (Library Manager):** `Adafruit BME280 Library` + `Adafruit Unified Sensor`
+
+**Wiring (I2C):**
+
+| BME280 pin | ESP32 pin |
+|---|---|
+| VCC | 3.3 V |
+| GND | GND |
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+
+Sensor is auto-detected (tries addresses `0x76` and `0x77`).  
+The web page shows a sensor card with temperature, humidity and pressure.  
+`GET /api/sensor` → JSON with `temp_c`, `humidity`, `pressure`
+
+---
+
+### LittleFS – UI files on flash (T2-B)
+
+HTML, CSS and JavaScript live in `ESP32_mini_webserver/data/` and are uploaded to the board's flash.  
+Edit the UI without recompiling.
+
+**Upload the data/ folder:**
+
+1. Install the plugin: **ESP32 LittleFS Data Upload**  
+   → In Arduino IDE 2.x: download the plugin ZIP and extract it into `~/.arduino15/plugins/`  
+   → Source: https://github.com/earlephilhower/arduino-littlefs-upload
+2. Run **Tools → ESP32 LittleFS Data Upload**
+
+---
+
+### WebSocket – real-time updates (T2-C)
+
+**Library (Library Manager):** `WebSockets` by Markus Sattler  
+*(replaced by AsyncWebSocket after the T3-A refactor – no separate port needed)*
+
+All open browser tabs instantly reflect pin state changes without polling.
+
+---
+
+### WiFi Manager – no hardcoded credentials (T2-D)
+
+**Library (Library Manager):** `WiFiManager` by tzapu
+
+On **first boot** (or after visiting `/reset-wifi`) the ESP32 opens an access point called **"ESP32-Setup"**.  
+Connect your phone to it → the captive portal opens automatically → enter your WiFi credentials → board saves them and connects.
+
+On every subsequent boot the board connects automatically using saved credentials.
+
+---
+
+### NVS persistence – state survives reboots (T3-B)
+
+The `Preferences` library (bundled with the ESP32 core) saves each pin's on/off state to flash.  
+After a power cut or reboot the previous state is restored.
+
+---
+
+### OTA updates – flash without USB (T3-C)
+
+**Library:** `ArduinoOTA` (bundled with the ESP32 core)
+
+Set the password in the sketch:
+
+```cpp
+#define OTA_PASSWORD "esp32ota"  // change this!
+```
+
+The board appears under **Tools → Port** as a network port (`esp32-webserver`).  
+Flash as usual with the Upload button in Arduino IDE.
+
+---
+
+### AsyncWebServer refactor (T3-A)
+
+These two libraries are **not** in the Library Manager – they must be installed manually.
+
+**Option A – Terminal (recommended on CachyOS):**
+
+```bash
+# Create Arduino libraries folder if it doesn't exist yet
+mkdir -p ~/Arduino/libraries
+
+# Download and extract ZIPs
+cd ~/Arduino/libraries
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+unzip -o AsyncTCP.zip
+unzip -o ESPAsyncWebServer.zip
+rm AsyncTCP.zip ESPAsyncWebServer.zip
+```
+
+Then **restart Arduino IDE**.
+
+**Option B – Arduino IDE GUI:**
+
+1. Download the ZIP files in your browser:
+   - https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip
+   - https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip
+2. Arduino IDE → **Sketch → Include Library → Add .ZIP Library**
+3. Select `AsyncTCP.zip` first, then `ESPAsyncWebServer.zip`
+4. **Restart Arduino IDE**
+
+> **Important:** AsyncTCP must be installed **before** ESPAsyncWebServer as it is a dependency.
+
+**Advantages over synchronous `WebServer`:**
+- Multiple requests handled in parallel (multiple browser tabs, Home Assistant + browser simultaneously)
+- `loop()` is no longer blocked by HTTP handling
+- WebSocket runs as path `/ws` on port 80 (no separate port 81)
+
+---
+
+### MQTT – Home Assistant / Node-RED (T3-D)
+
+**Library (Library Manager):** `PubSubClient` by Nick O'Leary
+
+**Install broker on CachyOS:**
+```bash
+sudo pacman -S mosquitto
+sudo systemctl enable --now mosquitto
+```
+
+Enable in the sketch:
+```cpp
+#define MQTT_ENABLED  true
+#define MQTT_BROKER   "192.168.1.X"  // IP of the machine running Mosquitto
+```
+
+**Topic structure** (base: `esp32/<MAC-address>`):
+
+| Topic | Direction | Payload |
+|---|---|---|
+| `.../pins/<gpio>/set` | → ESP32 | `ON`, `OFF`, `TOGGLE` |
+| `.../pins/<gpio>/state` | ESP32 → | `ON` / `OFF` (retained) |
+| `.../sensor/temp_c` | ESP32 → | e.g. `22.5` |
+| `.../sensor/humidity` | ESP32 → | e.g. `48.1` |
+| `.../sensor/pressure` | ESP32 → | e.g. `1013.2` |
+| `.../status` | ESP32 → | `online` / `offline` (LWT) |
+
+**Home Assistant – MQTT switch:**
+```yaml
+# configuration.yaml
+mqtt:
+  switch:
+    - name: "ESP32 LED"
+      command_topic: "esp32/<MAC>/pins/2/set"
+      state_topic:   "esp32/<MAC>/pins/2/state"
+      payload_on:    "ON"
+      payload_off:   "OFF"
+
+  sensor:
+    - name: "ESP32 Temperature"
+      state_topic:         "esp32/<MAC>/sensor/temp_c"
+      unit_of_measurement: "°C"
+```
 
 ---
 
@@ -587,7 +1106,11 @@ const char* password = "YOUR_PASSWORD";  // Your WiFi password
 ```
 ESP-32-mini-Webserver/
 ├── ESP32_mini_webserver/
-│   └── ESP32_mini_webserver.ino   # Main Arduino sketch
+│   ├── ESP32_mini_webserver.ino   # Main Arduino sketch
+│   └── data/                      # LittleFS – upload via IDE plugin
+│       ├── index.html             # Web UI shell
+│       ├── style.css              # Dark theme styles
+│       └── app.js                 # WebSocket client + dynamic rendering
 └── README.md
 ```
 
