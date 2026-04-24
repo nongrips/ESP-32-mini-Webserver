@@ -342,6 +342,165 @@ switch:
 
 ---
 
+## Erweiterungen
+
+### Multi-GPIO (T1-C)
+
+In der Sketchdatei die Pin-Konfiguration anpassen:
+
+```cpp
+const int   PINS[]      = {2, 4, 5};        // beliebig viele GPIOs
+const char* PIN_NAMES[] = {"LED", "Relais 1", "Relais 2"};
+```
+
+Jeder Pin bekommt eine eigene Zeile auf der Weboberfläche.  
+Steuerung per URL: `/toggle?pin=4` oder `/api/toggle?pin=4`
+
+---
+
+### Debug-Endpoint (T1-D)
+
+`GET http://esp32.local/debug` – gibt Klartext-Info aus:  
+Uptime, freier Heap, CPU, Flash, IP, MAC, SSID, RSSI, Pin-Zustände
+
+---
+
+### BME280 Temperatursensor (T2-A)
+
+**Libraries (Library Manager):** `Adafruit BME280 Library` + `Adafruit Unified Sensor`
+
+**Verkabelung (I2C):**
+
+| BME280-Pin | ESP32-Pin |
+|---|---|
+| VCC | 3,3 V |
+| GND | GND |
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+
+Sensor wird automatisch erkannt (versucht Adresse `0x76` und `0x77`).  
+Die Webseite zeigt Temperatur, Luftfeuchtigkeit und Luftdruck in einer Karte.  
+`GET /api/sensor` → JSON mit `temp_c`, `humidity`, `pressure`
+
+---
+
+### LittleFS – UI-Dateien im Flash (T2-B)
+
+HTML, CSS und JavaScript liegen in `ESP32_mini_webserver/data/` und werden auf den Flash des Boards hochgeladen.  
+Die Weboberfläche lässt sich so ohne Neukompilieren anpassen.
+
+**Dateien hochladen:**
+
+1. Plugin installieren: **ESP32 LittleFS Data Upload**  
+   → in Arduino IDE 2.x: Plugin-ZIP herunterladen und in `~/.arduino15/plugins/` entpacken  
+   → Quelle: https://github.com/earlephilhower/arduino-littlefs-upload
+2. **Werkzeuge → ESP32 LittleFS Data Upload** ausführen
+
+---
+
+### WebSocket – Echtzeit-Updates (T2-C)
+
+**Library (Library Manager):** `WebSockets` by Markus Sattler  
+*(nach T3-A-Refactor durch AsyncWebSocket ersetzt – kein separater Port mehr)*
+
+Alle offenen Browser-Tabs spiegeln den LED/Pin-Zustand sofort wider, ohne Polling.
+
+---
+
+### WiFi Manager – kein hardcodiertes Passwort (T2-D)
+
+**Library (Library Manager):** `WiFiManager` by tzapu
+
+Beim **ersten Start** (oder nach `/reset-wifi`) öffnet der ESP32 einen Access Point namens **„ESP32-Setup"**.  
+Verbinde dein Smartphone damit → das Captive-Portal öffnet sich automatisch → WLAN-Daten eingeben → Board speichert und verbindet sich.
+
+Bei jedem weiteren Start verbindet sich das Board automatisch mit dem gespeicherten WLAN.
+
+---
+
+### NVS-Persistenz – Zustand nach Neustart (T3-B)
+
+Die Library `Preferences` (im ESP32-Core enthalten) speichert den Ein/Aus-Zustand jedes Pins im Flash.  
+Nach einem Stromausfall oder Neustart ist der vorherige Zustand wiederhergestellt.
+
+---
+
+### OTA-Updates – Flashen ohne USB (T3-C)
+
+**Library:** `ArduinoOTA` (im ESP32-Core enthalten)
+
+Das Passwort in der Sketchdatei setzen:
+
+```cpp
+#define OTA_PASSWORD "esp32ota"  // bitte ändern!
+```
+
+In der Arduino IDE erscheint das Board unter **Werkzeuge → Port** als Netzwerk-Port (`esp32-webserver`).  
+Upload läuft wie gewohnt über den Upload-Button.
+
+---
+
+### AsyncWebServer-Refactor (T3-A)
+
+**Libraries (GitHub-ZIP installieren):**
+- https://github.com/mathieucarbou/ESPAsyncWebServer
+- https://github.com/mathieucarbou/AsyncTCP *(Dependency)*
+
+Installation: Arduino IDE → Sketch → Bibliothek einbinden → .ZIP-Bibliothek hinzufügen
+
+**Vorteile gegenüber synchronem `WebServer`:**
+- Mehrere Requests werden parallel verarbeitet (mehrere Browser-Tabs, Home Assistant + Browser gleichzeitig)
+- `loop()` wird nicht mehr durch HTTP-Handling blockiert
+- WebSocket läuft als Pfad `/ws` auf Port 80 (kein separater Port 81 mehr)
+
+---
+
+### MQTT – Home Assistant / Node-RED (T3-D)
+
+**Library (Library Manager):** `PubSubClient` by Nick O'Leary
+
+**Broker auf CachyOS installieren:**
+```bash
+sudo pacman -S mosquitto
+sudo systemctl enable --now mosquitto
+```
+
+In der Sketchdatei aktivieren:
+```cpp
+#define MQTT_ENABLED  true
+#define MQTT_BROKER   "192.168.1.X"  // IP des Rechners mit Mosquitto
+```
+
+**Topic-Struktur** (Basis: `esp32/<MAC-Adresse>`):
+
+| Topic | Richtung | Payload |
+|---|---|---|
+| `.../pins/<gpio>/set` | → ESP32 | `ON`, `OFF`, `TOGGLE` |
+| `.../pins/<gpio>/state` | ESP32 → | `ON` / `OFF` (retained) |
+| `.../sensor/temp_c` | ESP32 → | z. B. `22.5` |
+| `.../sensor/humidity` | ESP32 → | z. B. `48.1` |
+| `.../sensor/pressure` | ESP32 → | z. B. `1013.2` |
+| `.../status` | ESP32 → | `online` / `offline` (LWT) |
+
+**Home Assistant – MQTT Switch:**
+```yaml
+# configuration.yaml
+mqtt:
+  switch:
+    - name: "ESP32 LED"
+      command_topic: "esp32/<MAC>/pins/2/set"
+      state_topic:   "esp32/<MAC>/pins/2/state"
+      payload_on:    "ON"
+      payload_off:   "OFF"
+
+  sensor:
+    - name: "ESP32 Temperatur"
+      state_topic:         "esp32/<MAC>/sensor/temp_c"
+      unit_of_measurement: "°C"
+```
+
+---
+
 ## Mögliche Einsatzzwecke
 
 ### Heimautomatisierung
@@ -349,7 +508,7 @@ switch:
 - Rolladen, Ventilatoren oder Heizkörper fernsteuern
 
 ### Sensormonitoring
-- Temperatur/Luftfeuchtigkeit (DHT22, BME280) live im Browser anzeigen
+- Temperatur/Luftfeuchtigkeit (BME280) live im Browser und in Home Assistant
 - Bodenfeuchtigkeit für Pflanzen überwachen
 
 ### Prototypen & Bastelprojekte
@@ -359,7 +518,7 @@ switch:
 
 ### Lehr- & Lernprojekte
 - Einstieg in IoT und Webentwicklung
-- REST-API-Grundlagen verstehen
+- REST-API, WebSocket und MQTT in der Praxis
 - Netzwerkprogrammierung mit C++ üben
 
 ---
@@ -693,6 +852,165 @@ switch:
 
 ---
 
+## Extensions
+
+### Multi-GPIO (T1-C)
+
+Edit the pin config in the sketch:
+
+```cpp
+const int   PINS[]      = {2, 4, 5};
+const char* PIN_NAMES[] = {"LED", "Relay 1", "Relay 2"};
+```
+
+Each pin gets its own row in the web UI.  
+Control via URL: `/toggle?pin=4` or `/api/toggle?pin=4`
+
+---
+
+### Debug endpoint (T1-D)
+
+`GET http://esp32.local/debug` – returns plain-text board info:  
+uptime, free heap, CPU, flash size, IP, MAC, SSID, RSSI, pin states
+
+---
+
+### BME280 temperature sensor (T2-A)
+
+**Libraries (Library Manager):** `Adafruit BME280 Library` + `Adafruit Unified Sensor`
+
+**Wiring (I2C):**
+
+| BME280 pin | ESP32 pin |
+|---|---|
+| VCC | 3.3 V |
+| GND | GND |
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+
+Sensor is auto-detected (tries addresses `0x76` and `0x77`).  
+The web page shows a sensor card with temperature, humidity and pressure.  
+`GET /api/sensor` → JSON with `temp_c`, `humidity`, `pressure`
+
+---
+
+### LittleFS – UI files on flash (T2-B)
+
+HTML, CSS and JavaScript live in `ESP32_mini_webserver/data/` and are uploaded to the board's flash.  
+Edit the UI without recompiling.
+
+**Upload the data/ folder:**
+
+1. Install the plugin: **ESP32 LittleFS Data Upload**  
+   → In Arduino IDE 2.x: download the plugin ZIP and extract it into `~/.arduino15/plugins/`  
+   → Source: https://github.com/earlephilhower/arduino-littlefs-upload
+2. Run **Tools → ESP32 LittleFS Data Upload**
+
+---
+
+### WebSocket – real-time updates (T2-C)
+
+**Library (Library Manager):** `WebSockets` by Markus Sattler  
+*(replaced by AsyncWebSocket after the T3-A refactor – no separate port needed)*
+
+All open browser tabs instantly reflect pin state changes without polling.
+
+---
+
+### WiFi Manager – no hardcoded credentials (T2-D)
+
+**Library (Library Manager):** `WiFiManager` by tzapu
+
+On **first boot** (or after visiting `/reset-wifi`) the ESP32 opens an access point called **"ESP32-Setup"**.  
+Connect your phone to it → the captive portal opens automatically → enter your WiFi credentials → board saves them and connects.
+
+On every subsequent boot the board connects automatically using saved credentials.
+
+---
+
+### NVS persistence – state survives reboots (T3-B)
+
+The `Preferences` library (bundled with the ESP32 core) saves each pin's on/off state to flash.  
+After a power cut or reboot the previous state is restored.
+
+---
+
+### OTA updates – flash without USB (T3-C)
+
+**Library:** `ArduinoOTA` (bundled with the ESP32 core)
+
+Set the password in the sketch:
+
+```cpp
+#define OTA_PASSWORD "esp32ota"  // change this!
+```
+
+The board appears under **Tools → Port** as a network port (`esp32-webserver`).  
+Flash as usual with the Upload button in Arduino IDE.
+
+---
+
+### AsyncWebServer refactor (T3-A)
+
+**Libraries (install as GitHub ZIP):**
+- https://github.com/mathieucarbou/ESPAsyncWebServer
+- https://github.com/mathieucarbou/AsyncTCP *(dependency)*
+
+Installation: Arduino IDE → Sketch → Include Library → Add .ZIP Library
+
+**Advantages over synchronous `WebServer`:**
+- Multiple requests handled in parallel (multiple browser tabs, Home Assistant + browser simultaneously)
+- `loop()` is no longer blocked by HTTP handling
+- WebSocket runs as path `/ws` on port 80 (no separate port 81)
+
+---
+
+### MQTT – Home Assistant / Node-RED (T3-D)
+
+**Library (Library Manager):** `PubSubClient` by Nick O'Leary
+
+**Install broker on CachyOS:**
+```bash
+sudo pacman -S mosquitto
+sudo systemctl enable --now mosquitto
+```
+
+Enable in the sketch:
+```cpp
+#define MQTT_ENABLED  true
+#define MQTT_BROKER   "192.168.1.X"  // IP of the machine running Mosquitto
+```
+
+**Topic structure** (base: `esp32/<MAC-address>`):
+
+| Topic | Direction | Payload |
+|---|---|---|
+| `.../pins/<gpio>/set` | → ESP32 | `ON`, `OFF`, `TOGGLE` |
+| `.../pins/<gpio>/state` | ESP32 → | `ON` / `OFF` (retained) |
+| `.../sensor/temp_c` | ESP32 → | e.g. `22.5` |
+| `.../sensor/humidity` | ESP32 → | e.g. `48.1` |
+| `.../sensor/pressure` | ESP32 → | e.g. `1013.2` |
+| `.../status` | ESP32 → | `online` / `offline` (LWT) |
+
+**Home Assistant – MQTT switch:**
+```yaml
+# configuration.yaml
+mqtt:
+  switch:
+    - name: "ESP32 LED"
+      command_topic: "esp32/<MAC>/pins/2/set"
+      state_topic:   "esp32/<MAC>/pins/2/state"
+      payload_on:    "ON"
+      payload_off:   "OFF"
+
+  sensor:
+    - name: "ESP32 Temperature"
+      state_topic:         "esp32/<MAC>/sensor/temp_c"
+      unit_of_measurement: "°C"
+```
+
+---
+
 ## Possible use cases
 
 ### Home automation
@@ -737,7 +1055,11 @@ switch:
 ```
 ESP-32-mini-Webserver/
 ├── ESP32_mini_webserver/
-│   └── ESP32_mini_webserver.ino   # Main Arduino sketch
+│   ├── ESP32_mini_webserver.ino   # Main Arduino sketch
+│   └── data/                      # LittleFS – upload via IDE plugin
+│       ├── index.html             # Web UI shell
+│       ├── style.css              # Dark theme styles
+│       └── app.js                 # WebSocket client + dynamic rendering
 └── README.md
 ```
 
