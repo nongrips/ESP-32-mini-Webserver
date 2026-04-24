@@ -20,6 +20,7 @@ Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
 | `WiFiManager` | tzapu | curl / Library Manager |
 | `Adafruit BME280 Library` | Adafruit | curl / Library Manager |
 | `Adafruit Unified Sensor` | Adafruit | curl / Library Manager |
+| `Adafruit BusIO` | Adafruit | curl / Library Manager |
 | `WebSockets` | Markus Sattler | curl / Library Manager |
 | `PubSubClient` | Nick O'Leary | curl / Library Manager |
 | `AsyncTCP` | mathieucarbou | curl (kein Library Manager) |
@@ -46,6 +47,9 @@ unzip -o tmp.zip; mv Adafruit_BME280_Library-master Adafruit_BME280_Library; rm 
 
 curl -L https://github.com/adafruit/Adafruit_Sensor/archive/refs/heads/master.zip -o tmp.zip
 unzip -o tmp.zip; mv Adafruit_Sensor-master Adafruit_Sensor; rm tmp.zip
+
+curl -L https://github.com/adafruit/Adafruit_BusIO/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv Adafruit_BusIO-master Adafruit_BusIO; rm tmp.zip
 
 curl -L https://github.com/Links2004/arduinoWebSockets/archive/refs/heads/master.zip -o tmp.zip
 unzip -o tmp.zip; mv arduinoWebSockets-master WebSockets; rm tmp.zip
