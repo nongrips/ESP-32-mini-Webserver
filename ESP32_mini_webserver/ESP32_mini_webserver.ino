@@ -9,12 +9,14 @@
 #include <Adafruit_BME280.h>      // T2-A – Library Manager: "Adafruit BME280 Library"
 #include <Adafruit_Sensor.h>      // T2-A – Library Manager: "Adafruit Unified Sensor"
 #include <LittleFS.h>             // T2-B – im ESP32-Core enthalten
+#include <WebSocketsServer.h>     // T2-C – Library Manager: "WebSockets" by Markus Sattler
 
 // OTA-Passwort hier setzen (nie leer lassen!)
 #define OTA_PASSWORD "esp32ota"
 
-WebServer   server(80);
-Preferences prefs;
+WebServer        server(80);
+WebSocketsServer ws(81);     // T2-C: WebSocket auf Port 81
+Preferences      prefs;
 
 // --- BME280 Sensor -----------------------------------------------
 Adafruit_BME280 bme;
@@ -59,6 +61,7 @@ void handleToggle() {
     pinStates[idx] = !pinStates[idx];
     digitalWrite(PINS[idx], pinStates[idx] ? HIGH : LOW);
     saveState(idx);
+    broadcastState();
   }
   server.sendHeader("Location", "/");
   server.send(303);
@@ -86,6 +89,15 @@ void buildStatusJson(JsonDocument& doc) {
     sensor["humidity"] = serialized(String(sensorHum,  1));
     sensor["pressure"] = serialized(String(sensorPres, 1));
   }
+}
+
+// T2-C: aktuellen Status an alle verbundenen WebSocket-Clients senden
+void broadcastState() {
+  JsonDocument doc;
+  buildStatusJson(doc);
+  String json;
+  serializeJson(doc, json);
+  ws.broadcastTXT(json);
 }
 
 void handleApiSensor() {
@@ -119,6 +131,7 @@ void handleApiToggle() {
     pinStates[idx] = !pinStates[idx];
     digitalWrite(PINS[idx], pinStates[idx] ? HIGH : LOW);
     saveState(idx);
+    broadcastState();
   }
 
   JsonDocument doc;
@@ -234,11 +247,21 @@ void setup() {
   server.begin();
   Serial.println("Webserver gestartet.");
 
+  // T2-C: WebSocket-Server auf Port 81
+  ws.begin();
+  ws.onEvent([](uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+    if (type == WStype_CONNECTED) {
+      broadcastState(); // neuen Client sofort mit aktuellem Zustand versorgen
+    }
+  });
+  Serial.println("WebSocket gestartet (Port 81).");
+
   setupOTA();
 }
 
 void loop() {
   server.handleClient();
+  ws.loop();
   ArduinoOTA.handle();
 
   // T2-A: Sensor alle 2 s lesen (nie im HTTP-Handler aufrufen!)

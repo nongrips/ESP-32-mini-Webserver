@@ -1,4 +1,4 @@
-const pinsEl  = document.getElementById('pins');
+const pinsEl   = document.getElementById('pins');
 const sensorEl = document.getElementById('sensor');
 const errorEl  = document.getElementById('error');
 
@@ -23,23 +23,30 @@ function renderSensor(s) {
     </div>`;
 }
 
-async function loadStatus() {
-  try {
-    const res  = await fetch('/api/status');
-    const data = await res.json();
-    renderPins(data.pins);
-    renderSensor(data.sensor);
-    errorEl.textContent = '';
-  } catch (e) {
-    errorEl.textContent = 'Verbindung zum ESP32 unterbrochen.';
-  }
+function applyData(data) {
+  renderPins(data.pins);
+  renderSensor(data.sensor);
+  errorEl.textContent = '';
 }
+
+// T2-C: WebSocket-Verbindung für Echtzeit-Updates
+const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+const socket  = new WebSocket(`${wsProto}://${location.hostname}:81`);
+
+socket.onmessage = e => applyData(JSON.parse(e.data));
+
+socket.onclose = () => {
+  errorEl.textContent = 'WebSocket getrennt – Seite neu laden.';
+};
+
+socket.onerror = () => {
+  // Fallback: einmalig per HTTP laden
+  fetch('/api/status').then(r => r.json()).then(applyData).catch(() => {
+    errorEl.textContent = 'Verbindung zum ESP32 unterbrochen.';
+  });
+};
 
 async function toggle(gpio) {
   await fetch('/api/toggle?pin=' + gpio);
-  loadStatus();
+  // Update kommt automatisch per WebSocket-Broadcast vom Server
 }
-
-// Initialer Ladevorgang + Polling alle 3 s (wird durch WebSocket in T2-C ersetzt)
-loadStatus();
-setInterval(loadStatus, 3000);
