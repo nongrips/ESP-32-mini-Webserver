@@ -3,7 +3,10 @@
 Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und ausschalten lässt.  
 *A simple ESP32 webserver that lets you toggle an LED via your browser.*
 
-> **Board:** ESP-32D (HW-394) · WiFi + Bluetooth · USB-C
+> **Board:** ESP-32D (HW-394) · WiFi + Bluetooth · USB-C  
+> **Aktiver Branch / Active branch:** `claude/esp32-webserver-readme-WjgB3`  
+> Alle Erweiterungen (mDNS, JSON API, WiFiManager, OTA, BME280, LittleFS, WebSocket, AsyncWebServer, MQTT) befinden sich auf diesem Branch.  
+> *All extensions (mDNS, JSON API, WiFiManager, OTA, BME280, LittleFS, WebSocket, AsyncWebServer, MQTT) are on this branch.*
 
 ---
 
