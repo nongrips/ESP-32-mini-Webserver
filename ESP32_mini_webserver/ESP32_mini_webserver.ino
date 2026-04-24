@@ -2,15 +2,25 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
-#include <WiFiManager.h>   // T2-D – Library Manager: "WiFiManager" by tzapu
-#include <Preferences.h>   // T3-B – im ESP32-Core enthalten
-#include <ArduinoOTA.h>    // T3-C – im ESP32-Core enthalten
+#include <WiFiManager.h>          // T2-D – Library Manager: "WiFiManager" by tzapu
+#include <Preferences.h>          // T3-B – im ESP32-Core enthalten
+#include <ArduinoOTA.h>           // T3-C – im ESP32-Core enthalten
+#include <Wire.h>                 // T2-A – im ESP32-Core enthalten
+#include <Adafruit_BME280.h>      // T2-A – Library Manager: "Adafruit BME280 Library"
+#include <Adafruit_Sensor.h>      // T2-A – Library Manager: "Adafruit Unified Sensor"
 
 // OTA-Passwort hier setzen (nie leer lassen!)
 #define OTA_PASSWORD "esp32ota"
 
 WebServer   server(80);
 Preferences prefs;
+
+// --- BME280 Sensor -----------------------------------------------
+Adafruit_BME280 bme;
+bool    sensorOK  = false;
+float   sensorTemp = NAN, sensorHum = NAN, sensorPres = NAN;
+unsigned long lastSensorMs = 0;
+// -----------------------------------------------------------------
 
 // --- Pin-Konfiguration -------------------------------------------
 const int   PINS[]      = {2, 4, 5};
@@ -57,6 +67,15 @@ void handleRoot() {
     html += "</form></div>";
   }
 
+  if (sensorOK) {
+    html += "<div style='margin:20px auto;max-width:420px;background:#2d2d2d;padding:16px;border-radius:8px;'>";
+    html += "<b style='color:#00bcd4'>Sensor (BME280)</b><br><br>";
+    html += "&#127777; Temperatur: <b>" + String(sensorTemp, 1) + " &deg;C</b><br>";
+    html += "&#128167; Luftfeuchtigkeit: <b>" + String(sensorHum, 1) + " %</b><br>";
+    html += "&#127760; Luftdruck: <b>" + String(sensorPres, 1) + " hPa</b>";
+    html += "</div>";
+  }
+
   html += "<div class='links'><a href='/debug'>Debug</a><a href='/reset-wifi'>WLAN zurücksetzen</a></div>";
   html += "</body></html>";
   server.send(200, "text/html", html);
@@ -89,6 +108,29 @@ void buildStatusJson(JsonDocument& doc) {
     p["name"]  = PIN_NAMES[i];
     p["state"] = pinStates[i];
   }
+
+  JsonObject sensor = doc["sensor"].to<JsonObject>();
+  sensor["available"] = sensorOK;
+  if (sensorOK) {
+    sensor["temp_c"]   = serialized(String(sensorTemp, 1));
+    sensor["humidity"] = serialized(String(sensorHum,  1));
+    sensor["pressure"] = serialized(String(sensorPres, 1));
+  }
+}
+
+void handleApiSensor() {
+  JsonDocument doc;
+  doc["available"] = sensorOK;
+  if (sensorOK) {
+    doc["temp_c"]   = serialized(String(sensorTemp, 1));
+    doc["humidity"] = serialized(String(sensorHum,  1));
+    doc["pressure"] = serialized(String(sensorPres, 1));
+  } else {
+    doc["error"] = "Kein BME280 gefunden (SDA=GPIO21, SCL=GPIO22)";
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
 }
 
 void handleApiStatus() {
@@ -196,10 +238,16 @@ void setup() {
     Serial.println("mDNS: http://esp32.local");
   }
 
+  // T2-A: BME280 Sensor (I2C: SDA=GPIO21, SCL=GPIO22)
+  Wire.begin();
+  sensorOK = bme.begin(0x76) || bme.begin(0x77);
+  Serial.println(sensorOK ? "BME280 gefunden." : "BME280 nicht gefunden (optional).");
+
   server.on("/",            handleRoot);
   server.on("/toggle",      handleToggle);
   server.on("/api/status",  handleApiStatus);
   server.on("/api/toggle",  handleApiToggle);
+  server.on("/api/sensor",  handleApiSensor);
   server.on("/debug",       handleDebug);
   server.on("/reset-wifi",  handleResetWifi);
   server.onNotFound(handleNotFound);
@@ -212,4 +260,12 @@ void setup() {
 void loop() {
   server.handleClient();
   ArduinoOTA.handle();
+
+  // T2-A: Sensor alle 2 s lesen (nie im HTTP-Handler aufrufen!)
+  if (sensorOK && millis() - lastSensorMs >= 2000) {
+    sensorTemp = bme.readTemperature();
+    sensorHum  = bme.readHumidity();
+    sensorPres = bme.readPressure() / 100.0;
+    lastSensorMs = millis();
+  }
 }
