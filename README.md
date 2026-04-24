@@ -10,6 +10,41 @@ Ein einfacher Webserver auf dem ESP32, der eine LED über den Browser ein- und a
 
 ---
 
+## Benötigte Libraries / Required Libraries
+
+Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
+
+| Library | Quelle / Source | Installationsweg / How to install |
+|---|---|---|
+| `ArduinoJson` | Benoit Blanchon | Library Manager |
+| `WiFiManager` | tzapu | Library Manager |
+| `Adafruit BME280 Library` | Adafruit | Library Manager |
+| `Adafruit Unified Sensor` | Adafruit | Library Manager |
+| `WebSockets` | Markus Sattler | Library Manager |
+| `PubSubClient` | Nick O'Leary | Library Manager |
+| `AsyncTCP` | mathieucarbou | **GitHub ZIP** (siehe unten) |
+| `ESPAsyncWebServer` | mathieucarbou | **GitHub ZIP** (siehe unten) |
+
+> `ESPmDNS`, `Preferences`, `ArduinoOTA`, `LittleFS`, `Wire` – im ESP32-Core enthalten, kein Install nötig.
+
+### Library Manager (Arduino IDE)
+
+**Werkzeuge → Bibliotheken verwalten** – jeweils nach dem Namen suchen und installieren.
+
+### AsyncTCP + ESPAsyncWebServer (GitHub ZIP – CachyOS Terminal)
+
+```bash
+mkdir -p ~/Arduino/libraries && cd ~/Arduino/libraries
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+unzip -o AsyncTCP.zip && unzip -o ESPAsyncWebServer.zip
+rm AsyncTCP.zip ESPAsyncWebServer.zip
+```
+
+Danach Arduino IDE neu starten. / Then restart Arduino IDE.
+
+---
+
 ## Inhaltsverzeichnis / Table of Contents
 
 - [Deutsch](#deutsch)
