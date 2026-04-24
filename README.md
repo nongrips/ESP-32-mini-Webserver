@@ -445,11 +445,35 @@ Upload läuft wie gewohnt über den Upload-Button.
 
 ### AsyncWebServer-Refactor (T3-A)
 
-**Libraries (GitHub-ZIP installieren):**
-- https://github.com/mathieucarbou/ESPAsyncWebServer
-- https://github.com/mathieucarbou/AsyncTCP *(Dependency)*
+Diese beiden Libraries sind **nicht** im Library Manager – sie müssen manuell installiert werden.
 
-Installation: Arduino IDE → Sketch → Bibliothek einbinden → .ZIP-Bibliothek hinzufügen
+**Option A – Terminal (empfohlen für CachyOS):**
+
+```bash
+# Arduino-Bibliotheksordner anlegen falls noch nicht vorhanden
+mkdir -p ~/Arduino/libraries
+
+# ZIPs herunterladen und entpacken
+cd ~/Arduino/libraries
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+unzip -o AsyncTCP.zip
+unzip -o ESPAsyncWebServer.zip
+rm AsyncTCP.zip ESPAsyncWebServer.zip
+```
+
+Danach Arduino IDE **neu starten**.
+
+**Option B – Arduino IDE GUI:**
+
+1. ZIP-Dateien im Browser herunterladen:
+   - https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip
+   - https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip
+2. Arduino IDE → **Sketch → Bibliothek einbinden → .ZIP-Bibliothek hinzufügen**
+3. Zuerst `AsyncTCP.zip`, dann `ESPAsyncWebServer.zip` auswählen
+4. Arduino IDE **neu starten**
+
+> **Wichtig:** AsyncTCP muss **vor** ESPAsyncWebServer installiert werden, da es eine Abhängigkeit ist.
 
 **Vorteile gegenüber synchronem `WebServer`:**
 - Mehrere Requests werden parallel verarbeitet (mehrere Browser-Tabs, Home Assistant + Browser gleichzeitig)
@@ -955,11 +979,35 @@ Flash as usual with the Upload button in Arduino IDE.
 
 ### AsyncWebServer refactor (T3-A)
 
-**Libraries (install as GitHub ZIP):**
-- https://github.com/mathieucarbou/ESPAsyncWebServer
-- https://github.com/mathieucarbou/AsyncTCP *(dependency)*
+These two libraries are **not** in the Library Manager – they must be installed manually.
 
-Installation: Arduino IDE → Sketch → Include Library → Add .ZIP Library
+**Option A – Terminal (recommended on CachyOS):**
+
+```bash
+# Create Arduino libraries folder if it doesn't exist yet
+mkdir -p ~/Arduino/libraries
+
+# Download and extract ZIPs
+cd ~/Arduino/libraries
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+unzip -o AsyncTCP.zip
+unzip -o ESPAsyncWebServer.zip
+rm AsyncTCP.zip ESPAsyncWebServer.zip
+```
+
+Then **restart Arduino IDE**.
+
+**Option B – Arduino IDE GUI:**
+
+1. Download the ZIP files in your browser:
+   - https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip
+   - https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip
+2. Arduino IDE → **Sketch → Include Library → Add .ZIP Library**
+3. Select `AsyncTCP.zip` first, then `ESPAsyncWebServer.zip`
+4. **Restart Arduino IDE**
+
+> **Important:** AsyncTCP must be installed **before** ESPAsyncWebServer as it is a dependency.
 
 **Advantages over synchronous `WebServer`:**
 - Multiple requests handled in parallel (multiple browser tabs, Home Assistant + browser simultaneously)
