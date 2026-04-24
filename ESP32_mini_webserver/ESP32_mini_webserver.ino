@@ -21,12 +21,27 @@
 #include <Adafruit_BME280.h>      // Library Manager: "Adafruit BME280 Library"
 #include <Adafruit_Sensor.h>      // Library Manager: "Adafruit Unified Sensor"
 #include <LittleFS.h>             // im ESP32-Core enthalten
+#include <PubSubClient.h>         // T3-D – Library Manager: "PubSubClient" by Nick O'Leary
 
 #define OTA_PASSWORD "esp32ota"   // OTA-Passwort – bitte ändern!
 
+// --- MQTT-Konfiguration (auf false setzen um MQTT zu deaktivieren) ---
+#define MQTT_ENABLED  false
+#define MQTT_BROKER   "192.168.1.X"  // IP des Mosquitto-Brokers
+#define MQTT_PORT     1883
+#define MQTT_USER     ""             // leer lassen wenn keine Auth nötig
+#define MQTT_PASS     ""
+// Beispiel Broker auf CachyOS: sudo pacman -S mosquitto && sudo systemctl start mosquitto
+// --------------------------------------------------------------------
+
 AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");         // T3-A: WebSocket als Pfad, kein eigener Port mehr
+AsyncWebSocket ws("/ws");
 Preferences    prefs;
+
+// T3-D: MQTT
+WiFiClient   wifiClient;
+PubSubClient mqtt(wifiClient);
+String       mqttBase; // "esp32/<MAC>"
 
 // --- BME280 Sensor -----------------------------------------------
 Adafruit_BME280 bme;
@@ -85,6 +100,13 @@ void broadcastState() {
   ws.textAll(json);   // AsyncWebSocket API
 }
 
+// T3-D: Pin-Status per MQTT publizieren
+void mqttPublishPin(int idx) {
+  if (!MQTT_ENABLED || !mqtt.connected()) return;
+  String topic = mqttBase + "/pins/" + String(PINS[idx]) + "/state";
+  mqtt.publish(topic.c_str(), pinStates[idx] ? "ON" : "OFF", true);
+}
+
 void doToggle(int gpio) {
   int idx = pinIndex(gpio);
   if (idx >= 0) {
@@ -92,6 +114,7 @@ void doToggle(int gpio) {
     digitalWrite(PINS[idx], pinStates[idx] ? HIGH : LOW);
     saveState(idx);
     broadcastState();
+    mqttPublishPin(idx);
   }
 }
 
@@ -193,6 +216,58 @@ void setupRoutes() {
   });
 }
 
+// T3-D: MQTT-Callbacks und Reconnect
+void mqttCallback(char* topic, byte* payload, unsigned int len) {
+  String t = String(topic);
+  String v = String((char*)payload).substring(0, len);
+
+  // Erwartetes Topic: esp32/<MAC>/pins/<gpio>/set  → Payload: ON | OFF | TOGGLE
+  int gpioStart = t.lastIndexOf("/pins/") + 6;
+  int gpioEnd   = t.indexOf("/set", gpioStart);
+  if (gpioStart > 5 && gpioEnd > gpioStart) {
+    int gpio = t.substring(gpioStart, gpioEnd).toInt();
+    int idx  = pinIndex(gpio);
+    if (idx >= 0) {
+      bool newState = (v == "ON")  ? true
+                    : (v == "OFF") ? false
+                    : !pinStates[idx]; // TOGGLE
+      if (newState != pinStates[idx]) doToggle(gpio);
+    }
+  }
+}
+
+void mqttReconnect() {
+  if (!MQTT_ENABLED || mqtt.connected()) return;
+  String lwt = mqttBase + "/status";
+  if (mqtt.connect("esp32-webserver", MQTT_USER, MQTT_PASS,
+                   lwt.c_str(), 1, true, "offline")) {
+    mqtt.publish(lwt.c_str(), "online", true);
+    // Alle Pin-Kommando-Topics abonnieren
+    mqtt.subscribe((mqttBase + "/pins/+/set").c_str());
+    // Aktuellen Zustand publizieren
+    for (int i = 0; i < PIN_COUNT; i++) mqttPublishPin(i);
+    Serial.println("MQTT verbunden.");
+  }
+}
+
+void setupMQTT() {
+  if (!MQTT_ENABLED) return;
+  // Basis-Topic aus MAC-Adresse ableiten (eindeutig pro Board)
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+  mac.toLowerCase();
+  mqttBase = "esp32/" + mac;
+
+  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+  mqtt.setCallback(mqttCallback);
+  mqttReconnect();
+
+  Serial.println("MQTT-Basis-Topic: " + mqttBase);
+  Serial.println("  Kommando:  " + mqttBase + "/pins/<gpio>/set  (ON|OFF|TOGGLE)");
+  Serial.println("  Zustand:   " + mqttBase + "/pins/<gpio>/state");
+  Serial.println("  Sensor:    " + mqttBase + "/sensor/temp_c usw.");
+}
+
 void setupOTA() {
   ArduinoOTA.setHostname("esp32-webserver");
   ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -242,19 +317,32 @@ void setup() {
   server.begin();
   Serial.println("AsyncWebServer + WebSocket (/ws) gestartet.");
 
+  setupMQTT();
   setupOTA();
 }
 
 void loop() {
   ArduinoOTA.handle();
-  // server.handleClient() entfällt – AsyncWebServer läuft auf eigenem Task
-  // ws.loop() entfällt – AsyncWebSocket integriert
 
+  // T3-D: MQTT Keepalive + Reconnect
+  if (MQTT_ENABLED) {
+    if (!mqtt.connected()) mqttReconnect();
+    mqtt.loop();
+  }
+
+  // Sensor alle 2 s lesen und per WebSocket + MQTT pushen
   if (sensorOK && millis() - lastSensorMs >= 2000) {
     sensorTemp = bme.readTemperature();
     sensorHum  = bme.readHumidity();
     sensorPres = bme.readPressure() / 100.0;
     lastSensorMs = millis();
-    broadcastState(); // Sensor-Update auch per WebSocket pushen
+    broadcastState();
+
+    if (MQTT_ENABLED && mqtt.connected()) {
+      String base = mqttBase + "/sensor/";
+      mqtt.publish((base + "temp_c").c_str(),   String(sensorTemp, 1).c_str(), false);
+      mqtt.publish((base + "humidity").c_str(),  String(sensorHum,  1).c_str(), false);
+      mqtt.publish((base + "pressure").c_str(),  String(sensorPres, 1).c_str(), false);
+    }
   }
 }
