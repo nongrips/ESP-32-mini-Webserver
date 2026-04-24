@@ -16,22 +16,44 @@ Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
 
 | Library | Quelle / Source | Installationsweg / How to install |
 |---|---|---|
-| `ArduinoJson` | Benoit Blanchon | Library Manager |
-| `WiFiManager` | tzapu | Library Manager |
-| `Adafruit BME280 Library` | Adafruit | Library Manager |
-| `Adafruit Unified Sensor` | Adafruit | Library Manager |
-| `WebSockets` | Markus Sattler | Library Manager |
-| `PubSubClient` | Nick O'Leary | Library Manager |
+| `ArduinoJson` | Benoit Blanchon | arduino-cli / Library Manager |
+| `WiFiManager` | tzapu | arduino-cli / Library Manager |
+| `Adafruit BME280 Library` | Adafruit | arduino-cli / Library Manager |
+| `Adafruit Unified Sensor` | Adafruit | arduino-cli / Library Manager |
+| `WebSockets` | Markus Sattler | arduino-cli / Library Manager |
+| `PubSubClient` | Nick O'Leary | arduino-cli / Library Manager |
 | `AsyncTCP` | mathieucarbou | **GitHub ZIP** (siehe unten) |
 | `ESPAsyncWebServer` | mathieucarbou | **GitHub ZIP** (siehe unten) |
 
 > `ESPmDNS`, `Preferences`, `ArduinoOTA`, `LittleFS`, `Wire` – im ESP32-Core enthalten, kein Install nötig.
 
-### Library Manager (Arduino IDE)
+### Schnellinstallation per arduino-cli (CachyOS – empfohlen)
 
-**Werkzeuge → Bibliotheken verwalten** – jeweils nach dem Namen suchen und installieren.
+Alle Library-Manager-Libraries auf einmal installieren:
 
-### AsyncTCP + ESPAsyncWebServer (GitHub ZIP – CachyOS Terminal)
+```bash
+# arduino-cli einmalig installieren (falls noch nicht vorhanden)
+yay -S arduino-cli
+# oder: paru -S arduino-cli
+
+# Library-Index aktualisieren
+arduino-cli lib update-index
+
+# Alle 6 Libraries auf einmal installieren
+arduino-cli lib install \
+  "ArduinoJson" \
+  "WiFiManager" \
+  "Adafruit BME280 Library" \
+  "Adafruit Unified Sensor" \
+  "WebSockets" \
+  "PubSubClient"
+```
+
+Danach Arduino IDE **neu starten**.
+
+### AsyncTCP + ESPAsyncWebServer (GitHub ZIP)
+
+Diese zwei Libraries sind nicht im Index – einmalig per Terminal installieren:
 
 ```bash
 mkdir -p ~/Arduino/libraries && cd ~/Arduino/libraries
@@ -41,7 +63,11 @@ unzip -o AsyncTCP.zip && unzip -o ESPAsyncWebServer.zip
 rm AsyncTCP.zip ESPAsyncWebServer.zip
 ```
 
-Danach Arduino IDE neu starten. / Then restart Arduino IDE.
+Danach Arduino IDE **neu starten**.
+
+### Alternativ: Arduino IDE GUI
+
+**Werkzeuge → Bibliotheken verwalten** – jeweils nach dem Namen suchen und installieren.
 
 ---
 
