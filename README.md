@@ -29,26 +29,40 @@ Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
 
 ### Alle Libraries auf einmal installieren (Terminal – fish & bash)
 
-Alle 8 Libraries direkt per `curl` herunterladen – kein extra Tool nötig:
+Alle 8 Libraries direkt per `curl` herunterladen und mit korrektem Ordnernamen installieren – kein extra Tool nötig:
 
 ```fish
 mkdir -p ~/Arduino/libraries
 cd ~/Arduino/libraries
 
-curl -L https://github.com/bblanchon/ArduinoJson/archive/refs/heads/7.x.zip           -o ArduinoJson.zip
-curl -L https://github.com/tzapu/WiFiManager/archive/refs/heads/master.zip             -o WiFiManager.zip
-curl -L https://github.com/adafruit/Adafruit_BME280_Library/archive/refs/heads/master.zip -o BME280.zip
-curl -L https://github.com/adafruit/Adafruit_Sensor/archive/refs/heads/master.zip      -o Sensor.zip
-curl -L https://github.com/Links2004/arduinoWebSockets/archive/refs/heads/master.zip   -o WebSockets.zip
-curl -L https://github.com/knolleary/pubsubclient/archive/refs/heads/master.zip        -o PubSubClient.zip
-curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip        -o AsyncTCP.zip
-curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
+curl -L https://github.com/bblanchon/ArduinoJson/archive/refs/heads/7.x.zip -o tmp.zip
+unzip -o tmp.zip; mv ArduinoJson-7.x ArduinoJson; rm tmp.zip
 
-for f in *.zip; unzip -o $f; end
-rm *.zip
+curl -L https://github.com/tzapu/WiFiManager/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv WiFiManager-master WiFiManager; rm tmp.zip
+
+curl -L https://github.com/adafruit/Adafruit_BME280_Library/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv Adafruit_BME280_Library-master Adafruit_BME280_Library; rm tmp.zip
+
+curl -L https://github.com/adafruit/Adafruit_Sensor/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv Adafruit_Sensor-master Adafruit_Sensor; rm tmp.zip
+
+curl -L https://github.com/Links2004/arduinoWebSockets/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv arduinoWebSockets-master WebSockets; rm tmp.zip
+
+curl -L https://github.com/knolleary/pubsubclient/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv pubsubclient-master PubSubClient; rm tmp.zip
+
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv AsyncTCP-master AsyncTCP; rm tmp.zip
+
+curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o tmp.zip
+unzip -o tmp.zip; mv ESPAsyncWebServer-master ESPAsyncWebServer; rm tmp.zip
 ```
 
 Danach Arduino IDE **neu starten** – dann ist alles vorhanden und der Sketch kompiliert.
+
+> **Hinweis:** Falls eine Library schon installiert ist (z. B. über den Library Manager), den jeweiligen Block einfach überspringen. Doppelte Installationen verhindern die Kompilierung.
 
 ### Alternativ: Arduino IDE GUI
 
