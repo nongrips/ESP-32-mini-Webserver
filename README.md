@@ -16,58 +16,44 @@ Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
 
 | Library | Quelle / Source | Installationsweg / How to install |
 |---|---|---|
-| `ArduinoJson` | Benoit Blanchon | arduino-cli / Library Manager |
-| `WiFiManager` | tzapu | arduino-cli / Library Manager |
-| `Adafruit BME280 Library` | Adafruit | arduino-cli / Library Manager |
-| `Adafruit Unified Sensor` | Adafruit | arduino-cli / Library Manager |
-| `WebSockets` | Markus Sattler | arduino-cli / Library Manager |
-| `PubSubClient` | Nick O'Leary | arduino-cli / Library Manager |
-| `AsyncTCP` | mathieucarbou | **GitHub ZIP** (siehe unten) |
-| `ESPAsyncWebServer` | mathieucarbou | **GitHub ZIP** (siehe unten) |
+| `ArduinoJson` | Benoit Blanchon | curl / Library Manager |
+| `WiFiManager` | tzapu | curl / Library Manager |
+| `Adafruit BME280 Library` | Adafruit | curl / Library Manager |
+| `Adafruit Unified Sensor` | Adafruit | curl / Library Manager |
+| `WebSockets` | Markus Sattler | curl / Library Manager |
+| `PubSubClient` | Nick O'Leary | curl / Library Manager |
+| `AsyncTCP` | mathieucarbou | curl (kein Library Manager) |
+| `ESPAsyncWebServer` | mathieucarbou | curl (kein Library Manager) |
 
 > `ESPmDNS`, `Preferences`, `ArduinoOTA`, `LittleFS`, `Wire` – im ESP32-Core enthalten, kein Install nötig.
 
-### Schnellinstallation per arduino-cli (CachyOS – empfohlen)
+### Alle Libraries auf einmal installieren (Terminal – fish & bash)
 
-Alle Library-Manager-Libraries auf einmal installieren:
+Alle 8 Libraries direkt per `curl` herunterladen – kein extra Tool nötig:
 
-```bash
-# arduino-cli einmalig installieren (falls noch nicht vorhanden)
-yay -S arduino-cli
-# oder: paru -S arduino-cli
+```fish
+mkdir -p ~/Arduino/libraries
+cd ~/Arduino/libraries
 
-# Library-Index aktualisieren
-arduino-cli lib update-index
-
-# Alle 6 Libraries auf einmal installieren
-arduino-cli lib install \
-  "ArduinoJson" \
-  "WiFiManager" \
-  "Adafruit BME280 Library" \
-  "Adafruit Unified Sensor" \
-  "WebSockets" \
-  "PubSubClient"
-```
-
-Danach Arduino IDE **neu starten**.
-
-### AsyncTCP + ESPAsyncWebServer (GitHub ZIP)
-
-Diese zwei Libraries sind nicht im Index – einmalig per Terminal installieren:
-
-```bash
-mkdir -p ~/Arduino/libraries && cd ~/Arduino/libraries
-curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip -o AsyncTCP.zip
+curl -L https://github.com/bblanchon/ArduinoJson/archive/refs/heads/7.x.zip           -o ArduinoJson.zip
+curl -L https://github.com/tzapu/WiFiManager/archive/refs/heads/master.zip             -o WiFiManager.zip
+curl -L https://github.com/adafruit/Adafruit_BME280_Library/archive/refs/heads/master.zip -o BME280.zip
+curl -L https://github.com/adafruit/Adafruit_Sensor/archive/refs/heads/master.zip      -o Sensor.zip
+curl -L https://github.com/Links2004/arduinoWebSockets/archive/refs/heads/master.zip   -o WebSockets.zip
+curl -L https://github.com/knolleary/pubsubclient/archive/refs/heads/master.zip        -o PubSubClient.zip
+curl -L https://github.com/mathieucarbou/AsyncTCP/archive/refs/heads/master.zip        -o AsyncTCP.zip
 curl -L https://github.com/mathieucarbou/ESPAsyncWebServer/archive/refs/heads/master.zip -o ESPAsyncWebServer.zip
-unzip -o AsyncTCP.zip && unzip -o ESPAsyncWebServer.zip
-rm AsyncTCP.zip ESPAsyncWebServer.zip
+
+for f in *.zip; unzip -o $f; end
+rm *.zip
 ```
 
-Danach Arduino IDE **neu starten**.
+Danach Arduino IDE **neu starten** – dann ist alles vorhanden und der Sketch kompiliert.
 
 ### Alternativ: Arduino IDE GUI
 
-**Werkzeuge → Bibliotheken verwalten** – jeweils nach dem Namen suchen und installieren.
+**Werkzeuge → Bibliotheken verwalten** – jeweils nach dem Namen suchen und installieren  
+(gilt nicht für AsyncTCP und ESPAsyncWebServer – die nur per Terminal).
 
 ---
 
