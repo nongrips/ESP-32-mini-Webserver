@@ -8,6 +8,7 @@
 #include <Wire.h>                 // T2-A – im ESP32-Core enthalten
 #include <Adafruit_BME280.h>      // T2-A – Library Manager: "Adafruit BME280 Library"
 #include <Adafruit_Sensor.h>      // T2-A – Library Manager: "Adafruit Unified Sensor"
+#include <LittleFS.h>             // T2-B – im ESP32-Core enthalten
 
 // OTA-Passwort hier setzen (nie leer lassen!)
 #define OTA_PASSWORD "esp32ota"
@@ -39,46 +40,15 @@ void saveState(int idx) {
   prefs.putBool(("gpio" + String(PINS[idx])).c_str(), pinStates[idx]);
 }
 
+// T2-B: Seite wird aus LittleFS geladen
 void handleRoot() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<title>ESP32 Webserver</title>";
-  html += "<style>";
-  html += "body{font-family:sans-serif;text-align:center;margin-top:40px;background:#1e1e1e;color:#fff;}";
-  html += "h1{color:#00bcd4;}";
-  html += ".row{display:flex;justify-content:space-between;align-items:center;";
-  html += "background:#2d2d2d;padding:12px 20px;border-radius:8px;margin:10px auto;max-width:420px;}";
-  html += "button{padding:10px 22px;font-size:1rem;border:none;border-radius:6px;cursor:pointer;color:#fff;}";
-  html += ".on{background:#4CAF50;} .off{background:#f44336;}";
-  html += ".links{margin-top:30px;font-size:.85rem;}";
-  html += ".links a{color:#00bcd4;margin:0 10px;}";
-  html += "</style></head><body>";
-  html += "<h1>ESP32 Mini Webserver</h1>";
-
-  for (int i = 0; i < PIN_COUNT; i++) {
-    String cls = pinStates[i] ? "on" : "off";
-    String lbl = pinStates[i] ? "AN" : "AUS";
-    html += "<div class='row'>";
-    html += "<span><b>" + String(PIN_NAMES[i]) + "</b> (GPIO&nbsp;" + String(PINS[i]) + "):&nbsp;" + lbl + "</span>";
-    html += "<form action='/toggle' method='get' style='margin:0'>";
-    html += "<input type='hidden' name='pin' value='" + String(PINS[i]) + "'>";
-    html += "<button class='" + cls + "'>Umschalten</button>";
-    html += "</form></div>";
+  if (LittleFS.exists("/index.html")) {
+    File f = LittleFS.open("/index.html", "r");
+    server.streamFile(f, "text/html");
+    f.close();
+  } else {
+    server.send(500, "text/plain", "LittleFS: index.html nicht gefunden. Dateien hochladen!");
   }
-
-  if (sensorOK) {
-    html += "<div style='margin:20px auto;max-width:420px;background:#2d2d2d;padding:16px;border-radius:8px;'>";
-    html += "<b style='color:#00bcd4'>Sensor (BME280)</b><br><br>";
-    html += "&#127777; Temperatur: <b>" + String(sensorTemp, 1) + " &deg;C</b><br>";
-    html += "&#128167; Luftfeuchtigkeit: <b>" + String(sensorHum, 1) + " %</b><br>";
-    html += "&#127760; Luftdruck: <b>" + String(sensorPres, 1) + " hPa</b>";
-    html += "</div>";
-  }
-
-  html += "<div class='links'><a href='/debug'>Debug</a><a href='/reset-wifi'>WLAN zurücksetzen</a></div>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
 }
 
 void handleToggle() {
@@ -238,6 +208,13 @@ void setup() {
     Serial.println("mDNS: http://esp32.local");
   }
 
+  // T2-B: LittleFS mounten (true = bei Fehler neu formatieren)
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS: Fehler beim Mounten!");
+  } else {
+    Serial.println("LittleFS bereit.");
+  }
+
   // T2-A: BME280 Sensor (I2C: SDA=GPIO21, SCL=GPIO22)
   Wire.begin();
   sensorOK = bme.begin(0x76) || bme.begin(0x77);
@@ -250,6 +227,9 @@ void setup() {
   server.on("/api/sensor",  handleApiSensor);
   server.on("/debug",       handleDebug);
   server.on("/reset-wifi",  handleResetWifi);
+  // Statische Dateien aus LittleFS (CSS, JS, Bilder)
+  server.serveStatic("/style.css", LittleFS, "/style.css");
+  server.serveStatic("/app.js",    LittleFS, "/app.js");
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("Webserver gestartet.");
