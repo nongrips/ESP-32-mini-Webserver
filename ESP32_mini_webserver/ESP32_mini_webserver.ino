@@ -1,19 +1,22 @@
 // ============================================================
 // ESP32 Mini Webserver
-// Bibliotheken (Library Manager sofern nicht anders angegeben):
-//   - "WiFiManager" by tzapu
-//   - "ArduinoJson" by Benoit Blanchon
-//   - "Adafruit BME280 Library" + "Adafruit Unified Sensor"
-//   - "WebSockets" by Markus Sattler (nur noch als Dep. verbleibend)
-// T3-A – ESPAsyncWebServer: GitHub-ZIP installieren:
-//   https://github.com/mathieucarbou/ESPAsyncWebServer
-//   https://github.com/mathieucarbou/AsyncTCP  (Dependency)
+// Benötigte Libraries (Library Manager):
+//   - "ArduinoJson"              by Benoit Blanchon
+//   - "WiFiManager"              by tzapu
+//   - "Adafruit BME280 Library"  by Adafruit
+//   - "Adafruit Unified Sensor"  by Adafruit
+//   - "Adafruit BusIO"           by Adafruit
+//   - "WebSockets"               by Markus Sattler
+//   - "PubSubClient"             by Nick O'Leary
+// Alle im ESP32-Core enthalten (kein Install):
+//   ESPmDNS, Preferences, ArduinoOTA, LittleFS, Wire, WebServer
 // ============================================================
 
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>    // T3-A – GitHub ZIP (mathieucarbou fork)
+#include <WebServer.h>            // im ESP32-Core enthalten
+#include <WebSocketsServer.h>     // Library Manager: "WebSockets" by Markus Sattler
 #include <ESPmDNS.h>
-#include <ArduinoJson.h>
+#include <ArduinoJson.h>          // Library Manager: "ArduinoJson"
 #include <WiFiManager.h>          // Library Manager: "WiFiManager" by tzapu
 #include <Preferences.h>          // im ESP32-Core enthalten
 #include <ArduinoOTA.h>           // im ESP32-Core enthalten
@@ -21,27 +24,21 @@
 #include <Adafruit_BME280.h>      // Library Manager: "Adafruit BME280 Library"
 #include <Adafruit_Sensor.h>      // Library Manager: "Adafruit Unified Sensor"
 #include <LittleFS.h>             // im ESP32-Core enthalten
-#include <PubSubClient.h>         // T3-D – Library Manager: "PubSubClient" by Nick O'Leary
+#include <PubSubClient.h>         // Library Manager: "PubSubClient" by Nick O'Leary
 
 #define OTA_PASSWORD "esp32ota"   // OTA-Passwort – bitte ändern!
 
-// --- MQTT-Konfiguration (auf false setzen um MQTT zu deaktivieren) ---
+// --- MQTT-Konfiguration ------------------------------------------
 #define MQTT_ENABLED  false
-#define MQTT_BROKER   "192.168.1.X"  // IP des Mosquitto-Brokers
+#define MQTT_BROKER   "192.168.1.X"
 #define MQTT_PORT     1883
-#define MQTT_USER     ""             // leer lassen wenn keine Auth nötig
+#define MQTT_USER     ""
 #define MQTT_PASS     ""
-// Beispiel Broker auf CachyOS: sudo pacman -S mosquitto && sudo systemctl start mosquitto
-// --------------------------------------------------------------------
+// -----------------------------------------------------------------
 
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
-Preferences    prefs;
-
-// T3-D: MQTT
-WiFiClient   wifiClient;
-PubSubClient mqtt(wifiClient);
-String       mqttBase; // "esp32/<MAC>"
+WebServer        server(80);
+WebSocketsServer ws(81);
+Preferences      prefs;
 
 // --- BME280 Sensor -----------------------------------------------
 Adafruit_BME280 bme;
@@ -56,6 +53,11 @@ const char* PIN_NAMES[] = {"LED (Onboard)", "Ausgang 2", "Ausgang 3"};
 const int   PIN_COUNT   = sizeof(PINS) / sizeof(PINS[0]);
 bool        pinStates[PIN_COUNT];
 // -----------------------------------------------------------------
+
+// T3-D
+WiFiClient   wifiClient;
+PubSubClient mqtt(wifiClient);
+String       mqttBase;
 
 int pinIndex(int gpio) {
   for (int i = 0; i < PIN_COUNT; i++)
@@ -91,16 +93,14 @@ void buildStatusJson(JsonDocument& doc) {
   }
 }
 
-// T2-C / T3-A: Status-JSON an alle WebSocket-Clients senden
 void broadcastState() {
   JsonDocument doc;
   buildStatusJson(doc);
   String json;
   serializeJson(doc, json);
-  ws.textAll(json);   // AsyncWebSocket API
+  ws.broadcastTXT(json);
 }
 
-// T3-D: Pin-Status per MQTT publizieren
 void mqttPublishPin(int idx) {
   if (!MQTT_ENABLED || !mqtt.connected()) return;
   String topic = mqttBase + "/pins/" + String(PINS[idx]) + "/state";
@@ -118,119 +118,97 @@ void doToggle(int gpio) {
   }
 }
 
-// --- WebSocket-Event-Handler ------------------------------------
-void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
-               AwsEventType type, void*, uint8_t*, size_t) {
-  if (type == WS_EVT_CONNECT) {
-    // neuen Client sofort mit aktuellem Zustand versorgen
-    JsonDocument doc;
-    buildStatusJson(doc);
-    String json;
-    serializeJson(doc, json);
-    client->text(json);
+void handleRoot() {
+  if (LittleFS.exists("/index.html")) {
+    File f = LittleFS.open("/index.html", "r");
+    server.streamFile(f, "text/html");
+    f.close();
+  } else {
+    server.send(500, "text/plain", "LittleFS: index.html fehlt. Dateien hochladen!");
   }
 }
-// ----------------------------------------------------------------
 
-void setupRoutes() {
-  // Statische Dateien aus LittleFS; index.html für "/"
-  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
-
-  // Browser-Toggle (Redirect zurück zur Seite)
-  server.on("/toggle", HTTP_GET, [](AsyncWebServerRequest* req) {
-    int gpio = req->hasArg("pin") ? req->arg("pin").toInt() : PINS[0];
-    doToggle(gpio);
-    req->redirect("/");
-  });
-
-  // JSON API
-  server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-    JsonDocument doc;
-    buildStatusJson(doc);
-    String json;
-    serializeJson(doc, json);
-    req->send(200, "application/json", json);
-  });
-
-  server.on("/api/toggle", HTTP_GET, [](AsyncWebServerRequest* req) {
-    int gpio = req->hasArg("pin") ? req->arg("pin").toInt() : PINS[0];
-    doToggle(gpio);
-    int idx = pinIndex(gpio);
-    JsonDocument doc;
-    doc["gpio"]   = gpio;
-    doc["state"]  = idx >= 0 ? pinStates[idx] : false;
-    doc["led"]    = pinStates[0];
-    doc["uptime"] = millis() / 1000;
-    String json;
-    serializeJson(doc, json);
-    req->send(200, "application/json", json);
-  });
-
-  server.on("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
-    JsonDocument doc;
-    doc["available"] = sensorOK;
-    if (sensorOK) {
-      doc["temp_c"]   = serialized(String(sensorTemp, 1));
-      doc["humidity"] = serialized(String(sensorHum,  1));
-      doc["pressure"] = serialized(String(sensorPres, 1));
-    } else {
-      doc["error"] = "Kein BME280 gefunden (SDA=GPIO21, SCL=GPIO22)";
-    }
-    String json;
-    serializeJson(doc, json);
-    req->send(200, "application/json", json);
-  });
-
-  server.on("/debug", HTTP_GET, [](AsyncWebServerRequest* req) {
-    String txt = "=== ESP32 Debug ===\n";
-    txt += "Uptime:      " + String(millis() / 1000)              + " s\n";
-    txt += "Free Heap:   " + String(ESP.getFreeHeap())             + " bytes\n";
-    txt += "CPU Freq:    " + String(ESP.getCpuFreqMHz())           + " MHz\n";
-    txt += "Flash Size:  " + String(ESP.getFlashChipSize() / 1024) + " KB\n";
-    txt += "IP:          " + WiFi.localIP().toString()              + "\n";
-    txt += "MAC:         " + WiFi.macAddress()                      + "\n";
-    txt += "SSID:        " + WiFi.SSID()                            + "\n";
-    txt += "RSSI:        " + String(WiFi.RSSI())                    + " dBm\n";
-    txt += "Hostname:    esp32.local\n\nPins:\n";
-    for (int i = 0; i < PIN_COUNT; i++)
-      txt += "  GPIO " + String(PINS[i]) + " (" + String(PIN_NAMES[i]) + "): "
-           + (pinStates[i] ? "AN" : "AUS") + "\n";
-    req->send(200, "text/plain", txt);
-  });
-
-  server.on("/reset-wifi", HTTP_GET, [](AsyncWebServerRequest* req) {
-    req->send(200, "text/plain", "WLAN-Einstellungen werden zurückgesetzt. Board startet neu...");
-    delay(500);
-    WiFiManager wm;
-    wm.resetSettings();
-    ESP.restart();
-  });
-
-  // WebSocket registrieren
-  ws.onEvent(onWsEvent);
-  server.addHandler(&ws);
-
-  // 404
-  server.onNotFound([](AsyncWebServerRequest* req) {
-    req->send(404, "text/plain", "404: Nicht gefunden.");
-  });
+void handleToggle() {
+  int gpio = server.arg("pin").toInt();
+  if (gpio == 0) gpio = PINS[0];
+  doToggle(gpio);
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
-// T3-D: MQTT-Callbacks und Reconnect
+void handleApiStatus() {
+  JsonDocument doc;
+  buildStatusJson(doc);
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleApiToggle() {
+  int gpio = server.arg("pin").toInt();
+  if (gpio == 0) gpio = PINS[0];
+  doToggle(gpio);
+  int idx = pinIndex(gpio);
+  JsonDocument doc;
+  doc["gpio"]   = gpio;
+  doc["state"]  = idx >= 0 ? pinStates[idx] : false;
+  doc["led"]    = pinStates[0];
+  doc["uptime"] = millis() / 1000;
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleApiSensor() {
+  JsonDocument doc;
+  doc["available"] = sensorOK;
+  if (sensorOK) {
+    doc["temp_c"]   = serialized(String(sensorTemp, 1));
+    doc["humidity"] = serialized(String(sensorHum,  1));
+    doc["pressure"] = serialized(String(sensorPres, 1));
+  } else {
+    doc["error"] = "Kein BME280 gefunden (SDA=GPIO21, SCL=GPIO22)";
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleDebug() {
+  String txt = "=== ESP32 Debug ===\n";
+  txt += "Uptime:      " + String(millis() / 1000)              + " s\n";
+  txt += "Free Heap:   " + String(ESP.getFreeHeap())             + " bytes\n";
+  txt += "CPU Freq:    " + String(ESP.getCpuFreqMHz())           + " MHz\n";
+  txt += "Flash Size:  " + String(ESP.getFlashChipSize() / 1024) + " KB\n";
+  txt += "IP:          " + WiFi.localIP().toString()              + "\n";
+  txt += "MAC:         " + WiFi.macAddress()                      + "\n";
+  txt += "SSID:        " + WiFi.SSID()                            + "\n";
+  txt += "RSSI:        " + String(WiFi.RSSI())                    + " dBm\n";
+  txt += "Hostname:    esp32.local\n\nPins:\n";
+  for (int i = 0; i < PIN_COUNT; i++)
+    txt += "  GPIO " + String(PINS[i]) + " (" + String(PIN_NAMES[i]) + "): "
+         + (pinStates[i] ? "AN" : "AUS") + "\n";
+  server.send(200, "text/plain", txt);
+}
+
+void handleResetWifi() {
+  server.send(200, "text/plain", "WLAN wird zurückgesetzt, Board startet neu...");
+  delay(500);
+  WiFiManager wm;
+  wm.resetSettings();
+  ESP.restart();
+}
+
 void mqttCallback(char* topic, byte* payload, unsigned int len) {
   String t = String(topic);
   String v = String((char*)payload).substring(0, len);
-
-  // Erwartetes Topic: esp32/<MAC>/pins/<gpio>/set  → Payload: ON | OFF | TOGGLE
   int gpioStart = t.lastIndexOf("/pins/") + 6;
   int gpioEnd   = t.indexOf("/set", gpioStart);
   if (gpioStart > 5 && gpioEnd > gpioStart) {
     int gpio = t.substring(gpioStart, gpioEnd).toInt();
     int idx  = pinIndex(gpio);
     if (idx >= 0) {
-      bool newState = (v == "ON")  ? true
-                    : (v == "OFF") ? false
-                    : !pinStates[idx]; // TOGGLE
+      bool newState = (v == "ON") ? true : (v == "OFF") ? false : !pinStates[idx];
       if (newState != pinStates[idx]) doToggle(gpio);
     }
   }
@@ -242,30 +220,9 @@ void mqttReconnect() {
   if (mqtt.connect("esp32-webserver", MQTT_USER, MQTT_PASS,
                    lwt.c_str(), 1, true, "offline")) {
     mqtt.publish(lwt.c_str(), "online", true);
-    // Alle Pin-Kommando-Topics abonnieren
     mqtt.subscribe((mqttBase + "/pins/+/set").c_str());
-    // Aktuellen Zustand publizieren
     for (int i = 0; i < PIN_COUNT; i++) mqttPublishPin(i);
-    Serial.println("MQTT verbunden.");
   }
-}
-
-void setupMQTT() {
-  if (!MQTT_ENABLED) return;
-  // Basis-Topic aus MAC-Adresse ableiten (eindeutig pro Board)
-  String mac = WiFi.macAddress();
-  mac.replace(":", "");
-  mac.toLowerCase();
-  mqttBase = "esp32/" + mac;
-
-  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  mqtt.setCallback(mqttCallback);
-  mqttReconnect();
-
-  Serial.println("MQTT-Basis-Topic: " + mqttBase);
-  Serial.println("  Kommando:  " + mqttBase + "/pins/<gpio>/set  (ON|OFF|TOGGLE)");
-  Serial.println("  Zustand:   " + mqttBase + "/pins/<gpio>/state");
-  Serial.println("  Sensor:    " + mqttBase + "/sensor/temp_c usw.");
 }
 
 void setupOTA() {
@@ -281,7 +238,6 @@ void setupOTA() {
 void setup() {
   Serial.begin(115200);
 
-  // Gespeicherten Pin-Zustand laden
   prefs.begin("webserver", false);
   for (int i = 0; i < PIN_COUNT; i++) {
     pinStates[i] = prefs.getBool(("gpio" + String(PINS[i])).c_str(), false);
@@ -289,7 +245,6 @@ void setup() {
     digitalWrite(PINS[i], pinStates[i] ? HIGH : LOW);
   }
 
-  // WiFiManager: beim ersten Start Captive-Portal "ESP32-Setup" öffnen
   WiFiManager wm;
   wm.setConfigPortalTimeout(120);
   if (!wm.autoConnect("ESP32-Setup")) {
@@ -313,36 +268,57 @@ void setup() {
   sensorOK = bme.begin(0x76) || bme.begin(0x77);
   Serial.println(sensorOK ? "BME280 gefunden." : "BME280 nicht gefunden (optional).");
 
-  setupRoutes();
+  server.on("/",            handleRoot);
+  server.on("/toggle",      handleToggle);
+  server.on("/api/status",  handleApiStatus);
+  server.on("/api/toggle",  handleApiToggle);
+  server.on("/api/sensor",  handleApiSensor);
+  server.on("/debug",       handleDebug);
+  server.on("/reset-wifi",  handleResetWifi);
+  server.serveStatic("/style.css", LittleFS, "/style.css");
+  server.serveStatic("/app.js",    LittleFS, "/app.js");
+  server.onNotFound([](){ server.send(404, "text/plain", "404: Nicht gefunden."); });
   server.begin();
-  Serial.println("AsyncWebServer + WebSocket (/ws) gestartet.");
+  Serial.println("Webserver gestartet (Port 80).");
 
-  setupMQTT();
+  ws.begin();
+  ws.onEvent([](uint8_t num, WStype_t type, uint8_t*, size_t) {
+    if (type == WStype_CONNECTED) broadcastState();
+  });
+  Serial.println("WebSocket gestartet (Port 81).");
+
+  if (MQTT_ENABLED) {
+    String mac = WiFi.macAddress(); mac.replace(":", ""); mac.toLowerCase();
+    mqttBase = "esp32/" + mac;
+    mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+    mqtt.setCallback(mqttCallback);
+    mqttReconnect();
+  }
+
   setupOTA();
 }
 
 void loop() {
+  server.handleClient();
+  ws.loop();
   ArduinoOTA.handle();
 
-  // T3-D: MQTT Keepalive + Reconnect
   if (MQTT_ENABLED) {
     if (!mqtt.connected()) mqttReconnect();
     mqtt.loop();
   }
 
-  // Sensor alle 2 s lesen und per WebSocket + MQTT pushen
   if (sensorOK && millis() - lastSensorMs >= 2000) {
     sensorTemp = bme.readTemperature();
     sensorHum  = bme.readHumidity();
     sensorPres = bme.readPressure() / 100.0;
     lastSensorMs = millis();
     broadcastState();
-
     if (MQTT_ENABLED && mqtt.connected()) {
       String base = mqttBase + "/sensor/";
-      mqtt.publish((base + "temp_c").c_str(),   String(sensorTemp, 1).c_str(), false);
-      mqtt.publish((base + "humidity").c_str(),  String(sensorHum,  1).c_str(), false);
-      mqtt.publish((base + "pressure").c_str(),  String(sensorPres, 1).c_str(), false);
+      mqtt.publish((base + "temp_c").c_str(),  String(sensorTemp, 1).c_str());
+      mqtt.publish((base + "humidity").c_str(), String(sensorHum,  1).c_str());
+      mqtt.publish((base + "pressure").c_str(), String(sensorPres, 1).c_str());
     }
   }
 }

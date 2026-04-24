@@ -23,8 +23,8 @@ Alle Libraries müssen **vor dem ersten Kompilieren** installiert sein.
 | `Adafruit BusIO` | Adafruit | curl / Library Manager |
 | `WebSockets` | Markus Sattler | curl / Library Manager |
 | `PubSubClient` | Nick O'Leary | curl / Library Manager |
-| `AsyncTCP` | mathieucarbou | curl (kein Library Manager) |
-| `ESPAsyncWebServer` | mathieucarbou | curl (kein Library Manager) |
+| `AsyncTCP` | mathieucarbou | ⚠️ Inkompatibel mit ESP32 Core 3.x – nicht installieren |
+| `ESPAsyncWebServer` | mathieucarbou | ⚠️ Inkompatibel mit ESP32 Core 3.x – nicht installieren |
 
 > `ESPmDNS`, `Preferences`, `ArduinoOTA`, `LittleFS`, `Wire` – im ESP32-Core enthalten, kein Install nötig.
 
@@ -1042,7 +1042,15 @@ Flash as usual with the Upload button in Arduino IDE.
 
 ---
 
-### AsyncWebServer refactor (T3-A)
+### AsyncWebServer refactor (T3-A) ⚠️ ESP32 Core 3.x incompatible
+
+> **ESPAsyncWebServer conflicts with ESP32 Core 3.x** (default since 2024) due to `HTTP_GET`/`HTTP_POST` enum name collisions with `http_parser.h`.  
+> The sketch therefore uses the built-in `WebServer` + `WebSocketsServer` (Markus Sattler), which works with all core versions.  
+> If you have leftover AsyncWebServer folders, delete them:
+> ```fish
+> rm -rf ~/Arduino/libraries/ESPAsyncWebServer-main ~/Arduino/libraries/ESP_Async_WebServer
+> rm -rf ~/Arduino/libraries/AsyncTCP-main ~/Arduino/libraries/Async_TCP
+> ```
 
 These two libraries are **not** in the Library Manager – they must be installed manually.
 
