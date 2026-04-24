@@ -29,9 +29,9 @@ function applyData(data) {
   errorEl.textContent = '';
 }
 
-// T2-C: WebSocket-Verbindung für Echtzeit-Updates
+// T3-A: WebSocket läuft jetzt als Pfad /ws auf Port 80 (kein eigener Port mehr)
 const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-const socket  = new WebSocket(`${wsProto}://${location.hostname}:81`);
+const socket  = new WebSocket(`${wsProto}://${location.hostname}/ws`);
 
 socket.onmessage = e => applyData(JSON.parse(e.data));
 
